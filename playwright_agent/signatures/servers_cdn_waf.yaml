@@ -1,0 +1,41 @@
+- name: Cloudflare
+  category: cdn_waf
+  source: headers
+  match: regex
+  pattern: "cloudflare|cf-ray|cf-cache-status|__cf_bm|cf_clearance"
+  confidence: high
+  security_relevance: "CDN/WAF present; origin leaks and cache behavior are relevant."
+  manual_follow_up: "Check origin exposure and cache-control behavior."
+- name: Akamai
+  category: cdn_waf
+  source: headers
+  match: regex
+  pattern: "akamai|x-akamai|akamaized"
+  confidence: medium
+  security_relevance: "Akamai hints; inspect edge/origin headers."
+  manual_follow_up: "Check edge cache headers and origin leak opportunities."
+- name: Fastly
+  category: cdn_waf
+  source: headers
+  match: regex
+  pattern: "fastly|x-served-by|x-cache"
+  confidence: medium
+  security_relevance: "Fastly hints; cache/origin behavior matters."
+  manual_follow_up: "Check cache keys, Vary headers, and origin responses."
+- name: Nginx
+  category: web_server
+  source: headers
+  match: regex
+  pattern: "Server:.*nginx"
+  confidence: medium
+  security_relevance: "Web server hint; useful for path normalization and header behavior."
+  manual_follow_up: "Inspect headers and reverse proxy behavior."
+- name: Apache
+  category: web_server
+  source: headers
+  match: regex
+  pattern: "Server:.*Apache"
+  confidence: medium
+  security_relevance: "Apache hint; helps interpret rewrites and legacy endpoints."
+  manual_follow_up: "Inspect rewrite behavior and exposed files."
+

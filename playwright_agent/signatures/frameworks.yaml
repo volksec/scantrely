@@ -1,0 +1,57 @@
+- name: React
+  category: frontend_framework
+  source: html
+  match: regex
+  pattern: "__REACT_DEVTOOLS_GLOBAL_HOOK__|data-reactroot|react-dom"
+  confidence: high
+  security_relevance: "SPA/CSR stack; focus on JS/runtime APIs rather than legacy server forms."
+  manual_follow_up: "Inspect runtime network calls, routes, source maps, and client-side state."
+- name: Next.js
+  category: frontend_framework
+  source: html
+  match: regex
+  pattern: "__NEXT_DATA__|/_next/static/|/_next/data/|build-manifest"
+  confidence: high
+  security_relevance: "Next.js app; prioritize route/data files and runtime APIs."
+  manual_follow_up: "Check _next assets, API routes, server actions, and source maps."
+- name: Nuxt
+  category: frontend_framework
+  source: html
+  match: regex
+  pattern: "__NUXT__|/_nuxt/|payload.js"
+  confidence: high
+  security_relevance: "Nuxt app; focus on generated chunks and client-side state."
+  manual_follow_up: "Inspect payloads, runtime data, and exposed API calls."
+- name: Vue
+  category: frontend_framework
+  source: html
+  match: regex
+  pattern: "__VUE_DEVTOOLS_GLOBAL_HOOK__|data-v-|v-html|vue-router"
+  confidence: high
+  security_relevance: "Vue SPA; client-side routes and runtime data are usually the main surface."
+  manual_follow_up: "Inspect Vue routes, stores, and runtime requests."
+- name: Angular
+  category: frontend_framework
+  source: html
+  match: regex
+  pattern: "ng-version|_ngcontent-|runtime\\..*\\.js|polyfills\\..*\\.js"
+  confidence: high
+  security_relevance: "Angular app; runtime bundles and API usage matter more than legacy hidden fields."
+  manual_follow_up: "Inspect services, interceptors, and chunked bundles."
+- name: Vite
+  category: frontend_build_tool
+  source: html
+  match: regex
+  pattern: "/@vite/client|import\\.meta\\.env|vite"
+  confidence: medium
+  security_relevance: "Build tool hints; helps identify modern SPA asset patterns."
+  manual_follow_up: "Inspect dev asset leakage and runtime env exposure."
+- name: Webpack
+  category: frontend_build_tool
+  source: js
+  match: regex
+  pattern: "__webpack_require__|webpackChunk|webpackJsonp"
+  confidence: medium
+  security_relevance: "Bundle/runtime markers help locate lazy chunks and hidden endpoints."
+  manual_follow_up: "Inspect chunk manifests and runtime-loaded bundles."
+

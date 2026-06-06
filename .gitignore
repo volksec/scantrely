@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Database / data
+*.db
+*.db-wal
+*.db-shm
+data/asm_data.js
+data/snapshots/
+
+# Logs
+logs/*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Scans (user data)
+scans/*/
+
+# Playwright
+playwright_agent/evidence/
+
+# Docker
+docker/
+
+# Sensitive
+config/admins.json
+config/settings.json
+wordlists/
+bin/

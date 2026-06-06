@@ -1,0 +1,33 @@
+- name: WordPress
+  category: cms
+  source: html
+  match: regex
+  pattern: "/wp-content/|/wp-admin/|/wp-json/|wp-emoji-release"
+  confidence: high
+  security_relevance: "WordPress surface; plugin/theme assets and REST endpoints matter."
+  manual_follow_up: "Inspect REST endpoints and exposed admin paths."
+- name: Drupal
+  category: cms
+  source: html
+  match: regex
+  pattern: "/sites/default/|Drupal\\.settings"
+  confidence: medium
+  security_relevance: "Drupal hints; admin and asset paths matter."
+  manual_follow_up: "Inspect admin paths and exposed files."
+- name: Symfony
+  category: cms
+  source: html
+  match: regex
+  pattern: "/_profiler|/_wdt|Symfony"
+  confidence: medium
+  security_relevance: "Symfony debug endpoints can expose a lot."
+  manual_follow_up: "Check profiler and debug routes."
+- name: Laravel
+  category: cms
+  source: html
+  match: regex
+  pattern: "/_ignition|/debugbar|Laravel"
+  confidence: medium
+  security_relevance: "Laravel debug endpoints can be sensitive."
+  manual_follow_up: "Check Ignition and debugbar exposure."
+

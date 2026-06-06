@@ -1,0 +1,57 @@
+- name: ASP.NET_SessionId
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "ASP\\.NET_SessionId"
+  confidence: high
+  security_relevance: "Legacy ASP.NET session cookie present."
+  manual_follow_up: "Check Secure/HttpOnly/SameSite flags and session fixation behavior."
+- name: .ASPXAUTH
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "\\.ASPXAUTH"
+  confidence: high
+  security_relevance: "Forms auth cookie present."
+  manual_follow_up: "Inspect flags and logout invalidation."
+- name: JSESSIONID
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "JSESSIONID"
+  confidence: high
+  security_relevance: "Java app session cookie present."
+  manual_follow_up: "Inspect flags and session fixation behavior."
+- name: PHPSESSID
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "PHPSESSID"
+  confidence: high
+  security_relevance: "PHP session cookie present."
+  manual_follow_up: "Inspect session flags and CSRF handling."
+- name: laravel_session
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "laravel_session|XSRF-TOKEN"
+  confidence: medium
+  security_relevance: "Laravel session/CSRF hints."
+  manual_follow_up: "Inspect CSRF token placement and session flags."
+- name: next-auth
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "next-auth\\.session-token|__Secure-next-auth\\.session-token"
+  confidence: medium
+  security_relevance: "NextAuth session hints."
+  manual_follow_up: "Inspect auth flow, redirect logic, and token storage."
+- name: CONNECT.SID
+  category: session_mechanism
+  source: cookies
+  match: regex
+  pattern: "connect\\.sid"
+  confidence: medium
+  security_relevance: "Express session cookie."
+  manual_follow_up: "Inspect cookie flags and backend session invalidation."
+

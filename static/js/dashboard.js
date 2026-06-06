@@ -1,0 +1,9730 @@
+// ════════════════════════════════════════════════════════════════════════
+//  COMPATIBILITY LAYER — bridges old globals to ASM namespace
+//  When js/asm.js is loaded before this file, ASM namespace is available.
+//  When loaded standalone (legacy), fall back to local definitions.
+// ════════════════════════════════════════════════════════════════════════
+(function() {
+  'use strict';
+  // If ASM module loaded, set up aliases. Otherwise define locally.
+  if (typeof window.ASM === 'undefined') {
+    // Legacy mode — define essential values locally
+    window.SERVER_MODE = window.location.protocol === 'http:' && window.location.hostname !== '';
+    window._authHeaders = function() {
+      var tok = null;
+      try { tok = localStorage.getItem('asmToken'); } catch(e) {}
+      return tok ? {'x-auth-token': tok} : {};
+    };
+  }
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+//  DEMO DATA (Porto Seguro) — used when asm_data.js is not present
+// ════════════════════════════════════════════════════════════════════════
+const DEMO_DATA = {
+  version: "1.0",
+  generated: "2026-04-20T12:00:00",
+  companies: [
+    {
+      id: "portoseguro",
+      name: "Porto Seguro",
+      color: "#00c9a7",
+      domains: ["portoseguro.com.br"],
+      tags: ["insurance","fintech","brazil"],
+      last_scan: "2026-04-20",
+      stats: {
+        subdomains: 450, live_hosts: 201, open_ports: 1296, waf_protected: 128,
+        findings_critical: 3, findings_high: 6, findings_medium: 12, findings_low: 0, findings_info: 9
+      },
+      waf_coverage: { "Imperva":128, "AWS CloudFront":41, "Cloudflare":16, "Direct":56, "Direct (Firewalled)":110, "Google Cloud":8 },
+      tech_summary: { "Imperva Incapsula":14, "Apache HTTP":4, "nginx":4, "Varnish Cache":3, "Citrix NetScaler":3, "Envoy Proxy":2, "Cloudflare":5, "amazon_elb":6 },
+      buckets: [
+        { name:"productionresultssa14", url:"https://productionresultssa14.blob.core.windows.net/", accessible:false },
+        { name:"productionresultssa6",  url:"https://productionresultssa6.blob.core.windows.net/",  accessible:false }
+      ],
+      findings: [
+        { id:1, severity:"critical", category:"Credentials", title:"admin:admin Hardcoded em JS de Produção", host:"loja.portoseguro.com.br", url:"https://loja.portoseguro.com.br",
+          desc:"A classe <code>QuoteService</code> no bundle Angular contém credenciais Basic Auth hardcoded: <code>BasicAuth YWRtaW46YWRtaW4=</code> (admin:admin). Enviado em requests ao endpoint <code>/stage/proponente-api/v1/</code>.",
+          detail:`<pre>this.token = "BasicAuth YWRtaW46YWRtaW4=", this.className = "QuoteService"\n// Arquivo: /etc/clientlibs/porto-store/clientlibs/clientlib-angular.lc-*.js\n// Decodificado: admin:admin</pre><b>Endpoints afetados:</b><br>• https://47zimjues7.execute-api.us-west-2.amazonaws.com/stage/proponente-api/v1/<br>• https://bxn9o4w0pd.execute-api.ca-central-1.amazonaws.com/` },
+        { id:2, severity:"critical", category:"CVE / Vuln", title:"Tableau Server 2023.1.7 — 6 CVEs Conhecidas", host:"tableau.portoseguro.com.br", url:"https://tableau.portoseguro.com.br",
+          desc:"Tableau Server versão <code>2023.1.7</code> em produção com 6 CVEs confirmados. Versão corrigida: <code>2023.3.19</code>.",
+          detail:`<b>CVEs:</b><br>• CVE-2023-44487 — HTTP/2 Rapid Reset (CVSS 7.5)<br>• CVE-2023-25953 — Stored XSS<br>• CVE-2023-25954 — Info Disclosure<br><b>IP direto:</b> 131.161.97.72 &nbsp; <b>Portas:</b> 80, 443, 8080, 8443, 9000` },
+        { id:3, severity:"critical", category:"Cloud", title:"MISP Threat Intelligence Platform Exposto", host:"misp.portoseguro.com.br", url:"https://misp.portoseguro.com.br",
+          desc:"Plataforma MISP acessível via internet. Contém IOCs, indicadores de malware e inteligência de ameaças interna.",
+          detail:`<b>Host:</b> misp.portoseguro.com.br → 131.161.97.x<br><b>Impacto:</b> Exposição de toda inteligência de ameaças interna e IOCs.<br><b>Fix:</b> Restringir via VPN/IP allowlist.` },
+        { id:4, severity:"high", category:"IAM / Identity", title:"SailPoint IdentityNow Portal Exposto", host:"portaldeacessos.portoseguro.com.br", url:"https://portaldeacessos.portoseguro.com.br",
+          desc:"Portal de Identity Governance (SailPoint) acessível via internet. Gerencia acesso de todos colaboradores.",
+          detail:`<b>Tenant:</b> portoseguro.login.sailpoint.com<br><b>API:</b> portoseguro.api.identitynow.com<br><b>Disclosure:</b> Formato de matrícula <code>f0123456</code> revelado na página de login.` },
+        { id:5, severity:"high", category:"CORS", title:"CORS Exploitable — Origin Refletido + Credentials", host:"abx.loja.portoseguro.com.br", url:"https://abx.loja.portoseguro.com.br",
+          desc:"Servidor reflete qualquer cabeçalho Origin com <code>Access-Control-Allow-Credentials: true</code>.",
+          detail:`<b>Request:</b> Origin: https://evil.com<br><b>Response:</b><br><pre>Access-Control-Allow-Origin: https://evil.com\nAccess-Control-Allow-Credentials: true</pre>` },
+        { id:6, severity:"high", category:"Info Disclosure", title:"Hostname Interno Vazado em Header CSP", host:"dev.saude.portoseguro.com.br", url:"https://dev.saude.portoseguro.com.br",
+          desc:"Header <code>Content-Security-Policy</code> expõe hostname de servidor interno na diretiva <code>frame-src</code>.",
+          detail:`<b>CSP frame-src:</b><br><pre>https://nt50388.portoseguro.brasil/</pre>Hostname Windows NT interno. TLD ".brasil" = domínio AD interno.` },
+        { id:7, severity:"high", category:"IAM / Identity", title:"Formato de Matrícula de Funcionários Exposto", host:"portaldeacessos.portoseguro.com.br", url:"https://portaldeacessos.portoseguro.com.br",
+          desc:"Página de login SailPoint revela o formato das matrículas: <code>f0123456</code> (f + 7 dígitos).",
+          detail:`<b>Texto:</b> "Lembrando de substituir f0123456 pela sua matricula"<br><b>Formato:</b> <code>f[0-9]{7}</code><br><b>Risco:</b> Permite gerar listas para password spray.` },
+        { id:8, severity:"high", category:"Credentials", title:"AWS API Gateway URLs Hardcoded em JS", host:"loja.portoseguro.com.br", url:"https://loja.portoseguro.com.br",
+          desc:"Dois AWS API Gateway endpoints hardcoded no bundle JS, usados com credenciais admin:admin.",
+          detail:`<b>GW1:</b> <code>bxn9o4w0pd.execute-api.ca-central-1.amazonaws.com</code><br><b>GW2:</b> <code>47zimjues7.execute-api.us-west-2.amazonaws.com</code><br><b>Auth:</b> BasicAuth admin:admin` },
+        { id:9, severity:"high", category:"CVE / Vuln", title:"OAuth Token Endpoint Potencialmente Spray-ável", host:"login.windows.net", url:"https://login.windows.net",
+          desc:"Endpoint OAuth2 Azure AD identificado como potencialmente vulnerável a password spraying.",
+          detail:`<b>Endpoint:</b> https://login.windows.net/ed7958eb-216a-4854-a42e-3c7127272021/oauth2/token<br><b>Tenant:</b> ed7958eb-216a-4854-a42e-3c7127272021` },
+        { id:10, severity:"medium", category:"Dev/Stage", title:"APIs de Saúde DEV/HML Acessíveis (CORS Wildcard)", host:"dev.api.saude.portoseguro.com.br", url:"", desc:"APIs do Portal do Prestador em DEV/HML com CORS <code>Access-Control-Allow-Origin: *</code>.", detail:"<b>DEV:</b> https://dev.api.saude.portoseguro.com.br/prestador/v1/<br><b>HML:</b> https://hml.api.saude.portoseguro.com.br/prestador/v1/" },
+        { id:11, severity:"medium", category:"Dev/Stage", title:"Ambientes Stage/Dev de Autenticação Expostos", host:"loja-stage-auth.portoseguro.com.br", url:"", desc:"Cognito User Pools HML e DEV do Adobe Experience Manager acessíveis via internet.", detail:"<b>Stage:</b> loja-stage-auth → aem-hml.auth.ca-central-1.amazoncognito.com<br><b>Dev:</b> loja-dev-auth → AWS Cognito DEV" },
+        { id:12, severity:"medium", category:"Dev/Stage", title:"Portal do Prestador (Saúde) DEV/HML Exposto", host:"dev.saude.portoseguro.com.br", url:"", desc:"Portal de saúde DEV/HML acessível via internet (S3+CloudFront). Dados LGPD.", detail:"<b>HML:</b> hml.saude.portoseguro.com.br<br><b>DEV:</b> dev.saude.portoseguro.com.br" },
+        { id:13, severity:"medium", category:"Cloud", title:"Orquestrador de Pagamentos Exposto", host:"portal.meiosdepagamento.portoseguro.com.br", url:"", desc:"Sistema de orquestração de pagamentos acessível via internet (S3+CloudFront+Azure AD).", detail:"<b>Azure App:</b> f7803731-7830-4239-a811-fee25df9883a<br><b>Tenant:</b> ed7958eb-216a-4854-a42e-3c7127272021" },
+        { id:14, severity:"medium", category:"Cloud", title:"PortoStore Backoffice Exposto", host:"psstore.portoseguro.com.br", url:"", desc:"Backoffice da Porto Store (Angular + S3+CloudFront) acessível externamente.", detail:"<b>URL:</b> https://psstore.portoseguro.com.br" },
+        { id:15, severity:"medium", category:"Dev/Stage", title:"APIs Stage/Dev da Loja Acessíveis", host:"loja-stage-api.portoseguro.com.br", url:"", desc:"Endpoints de API stage/dev da loja online acessíveis externamente via AWS CloudFront.", detail:"<b>Stage:</b> loja-stage-api.portoseguro.com.br<br><b>Dev:</b> loja-dev-api.portoseguro.com.br" },
+        { id:16, severity:"medium", category:"IAM / Identity", title:"Cognito User Pools AEM Identificados", host:"loja-auth.portoseguro.com.br", url:"", desc:"User Pools AWS Cognito para autenticação AEM em PRD/HML/DEV identificados.", detail:"<b>PRD:</b> aem-prd.auth.ca-central-1.amazoncognito.com<br><b>HML:</b> aem-hml.auth.ca-central-1.amazoncognito.com" },
+        { id:17, severity:"medium", category:"DNS", title:"Subdomain CNAME para Domínio Não Controlado", host:"campanhas.portoseguro.com.br", url:"", desc:"CNAME para <code>campanhasportoseguro.com.br</code> hospedado em DNS parking (Hostinger).", detail:"<b>NS:</b> ns1.dns-parking.com / ns2.dns-parking.com<br><b>IPs:</b> 77.37.42.244, 147.79.105.154" },
+        { id:18, severity:"medium", category:"Info Disclosure", title:"Azure AD Client IDs Expostos em JS", host:"portal.meiosdepagamento.portoseguro.com.br", url:"", desc:"IDs de aplicações Azure AD expostos nos bundles JS públicos.", detail:"<b>Pagamentos:</b> f7803731-7830-4239-a811-fee25df9883a<br><b>SailPoint:</b> e488b780-0d92-4e92-8ea4-8b24849c0800" },
+        { id:19, severity:"medium", category:"Cloud", title:"MuleSoft Anypoint Flex Gateway Identificado", host:"api.bap-hml.portoseguro.com.br", url:"", desc:"API Gateway MuleSoft em ambiente HML identificado e acessível.", detail:"<b>HML:</b> api.bap-hml.portoseguro.com.br<br><b>mTLS:</b> api.bap-mtls-hml.portoseguro.com.br" },
+        { id:20, severity:"medium", category:"Info Disclosure", title:"Topologia de Rede Interna via DNS", host:"nac11dc00-tlf.portoseguro.com.br", url:"", desc:"DNS público com IPs privados (172.x.x.x) revelando topologia interna.", detail:"<b>NAC:</b> nac11dc00-tlf → 172.28.1.172<br><b>ALM:</b> portoalm → 172.27.73.27<br><b>VLANs:</b> visitantes1-4 → 172.26-27.x" },
+        { id:21, severity:"info", category:"Cloud", title:"Axway Amplify API Marketplace Identificado", host:"developers.portoseguro.com.br", url:"", desc:"Marketplace de APIs Axway com 3 domínios para parceiros.", detail:"developers.portoseguro.com.br<br>porto-developers.portoseguro.com.br<br>seguros-developers.portoseguro.com.br" },
+        { id:22, severity:"info", category:"Cloud", title:"PortoBank Cross-Domain API Gateways", host:"api-gw.portobank-crossdomain.prd.portoseguro.com.br", url:"", desc:"API Gateways cross-domain do PortoBank (PRD/HML) com variantes mTLS.", detail:"" },
+        { id:23, severity:"info", category:"Cloud", title:"Session Border Controller (SBC) Identificado", host:"sbc.portoseguro.com.br", url:"wss://sbc.portoseguro.com.br", desc:"SBC VoIP/WebRTC identificado via URI wss://. Atrás de firewall.", detail:"<b>CNAME:</b> sbc.lb.portoseguro.com.br → 131.161.97.102" },
+        { id:24, severity:"info", category:"Cloud", title:"Tenant Sydle (BPM) Identificado", host:"portoseguro.sydle.one", url:"https://portoseguro.sydle.one", desc:"Tenant Sydle BPM/automação hospedado no Cloudflare (403 requer auth).", detail:"" },
+        { id:25, severity:"info", category:"DNS", title:"DNSSEC NSEC Zone Walking em Afiliados", host:"mtl.mailcloud.com.br", url:"", desc:"Zone walking DNSSEC habilitado em domínios de parceiros.", detail:"• mtl.mailcloud.com.br<br>• app.securiti.ai" },
+        { id:26, severity:"info", category:"CVE / Vuln", title:"Shodan CVEs em Servidores de E-mail Afiliados", host:"mtl.mailcloud.com.br", url:"", desc:"CVEs em servidores de email/infra de terceiros usados pelo Porto Seguro.", detail:"<b>mtl.mailcloud.com.br:</b> CVE-2025-23419, CVE-2022-41742, CVE-2023-44487" },
+        { id:27, severity:"info", category:"Info Disclosure", title:"Varnish Cache Plus na Loja", host:"loja.portoseguro.com.br", url:"", desc:"Loja usa Varnish Cache Plus (versão enterprise).", detail:"" },
+        { id:28, severity:"info", category:"Cloud", title:"Dois Gateways Citrix NetScaler Identificados", host:"ho.portoseguro.com.br", url:"", desc:"Dois Citrix NetScaler ADC para acesso remoto/VDI de funcionários.", detail:"<b>GW1:</b> ho.portoseguro.com.br<br><b>GW2:</b> ho.ctx.portoseguro.com.br" },
+        { id:29, severity:"info", category:"Cloud", title:"Banking Sandbox APIs Expostas", host:"apibank-sandbox.portoseguro.com.br", url:"", desc:"Endpoints sandbox do PortoBank disponíveis externamente.", detail:"apibank-sandbox.portoseguro.com.br → 54.94.225.105" },
+        { id:30, severity:"info", category:"Info Disclosure", title:"Estrutura AEM CMS Revelada em 404", host:"loja-stage.portoseguro.com.br", url:"", desc:"Resposta 404 do AEM revela estrutura interna de paths.", detail:`<pre>404 Resource at '/content/porto-seguro/lojaonlineportoseguro/Home.html' not found</pre>` }
+      ],
+      hosts: [
+        {host:"abx.loja.portoseguro.com.br",ip:"95.131.136.1",waf:"Direct",technologies:["nginx"],ports:["80","443"]},
+        {host:"agendavip.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"aluguel.portoseguro.com.br",ip:"34.149.87.214",waf:"Google Cloud",technologies:["cloud_platform"],ports:["80","443"]},
+        {host:"antecipacaoportobank.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"apibank-sandbox.portoseguro.com.br",ip:"54.94.225.105",waf:"AWS CloudFront",technologies:[],ports:["443"]},
+        {host:"api.bap-hml.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:["anypoint_flex_gateway"],ports:["80","443"]},
+        {host:"api.bap-mtls-hml.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"api.checkout.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"apicorporativops.portoseguro.com.br",ip:"192.225.159.76",waf:"Direct",technologies:["apache_http_server"],ports:["443","8080"]},
+        {host:"api-gw.portobank-crossdomain.hml.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"api-gw.portobank-crossdomain.prd.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"api.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"bank-hml.portoseguro.com.br",ip:"108.158.168.188",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"b.comunicados.portoseguro.com.br",ip:"104.18.16.230",waf:"Cloudflare",technologies:[],ports:["80","443","8080","8443"]},
+        {host:"b.consorcio.portoseguro.com.br",ip:"104.18.17.230",waf:"Cloudflare",technologies:[],ports:["80","443","8080","8443"]},
+        {host:"campanhas.portoseguro.com.br",ip:"77.37.42.244",waf:"Direct",technologies:[],ports:["80","443"]},
+        {host:"checkout.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443"]},
+        {host:"clickplayrfc.el.portoseguro.com.br",ip:"104.26.0.210",waf:"Cloudflare",technologies:["cloudflare"],ports:["80","443","8080","8443"]},
+        {host:"cpe-prd.portoseguro.com.br",ip:"3.166.152.54",waf:"AWS CloudFront",technologies:["amazon_cloudfront","amazon_elb"],ports:["80","443"]},
+        {host:"dev.api.saude.portoseguro.com.br",ip:"15.157.223.2",waf:"AWS CloudFront",technologies:["amazon_elb"],ports:["443"]},
+        {host:"developers.portoseguro.com.br",ip:"3.86.171.76",waf:"AWS CloudFront",technologies:["envoy","bootstrap"],ports:["80","443"]},
+        {host:"dev.saude.portoseguro.com.br",ip:"3.174.83.116",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"hml.api.saude.portoseguro.com.br",ip:"16.52.231.210",waf:"AWS CloudFront",technologies:["amazon_elb"],ports:["443"]},
+        {host:"hml.saude.portoseguro.com.br",ip:"3.162.247.56",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"ho.ctx.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:["apache","citrix_netscaler","jquery"],ports:["80","443"]},
+        {host:"ho.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:["apache","citrix_netscaler","jquery"],ports:["80","443"]},
+        {host:"loja-auth.portoseguro.com.br",ip:"18.155.21.66",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"loja-dev-api.portoseguro.com.br",ip:"3.98.229.2",waf:"AWS CloudFront",technologies:[],ports:["443"]},
+        {host:"loja.portoseguro.com.br",ip:"151.101.131.10",waf:"AWS CloudFront",technologies:["varnish_cache","varnish_cache_plus"],ports:["80","443"]},
+        {host:"loja-stage-api.portoseguro.com.br",ip:"3.98.7.115",waf:"AWS CloudFront",technologies:[],ports:["443"]},
+        {host:"loja-stage-auth.portoseguro.com.br",ip:"13.227.107.32",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"loja-stage.portoseguro.com.br",ip:"151.101.67.10",waf:"AWS CloudFront",technologies:["varnish_cache"],ports:["80","443"]},
+        {host:"misp.portoseguro.com.br",ip:"131.161.97.x",waf:"Direct (Firewalled)",technologies:[],ports:[]},
+        {host:"parceirosgcp.portoseguro.com.br",ip:"35.215.247.198",waf:"Google Cloud",technologies:[],ports:["80","443"]},
+        {host:"portaldeacessos.portoseguro.com.br",ip:"172.66.1.161",waf:"Cloudflare",technologies:["cloudflare"],ports:["80","443","8080","8443"]},
+        {host:"portal.meiosdepagamento.portoseguro.com.br",ip:"18.67.130.35",waf:"AWS CloudFront",technologies:["amazon_cloudfront"],ports:["80","443"]},
+        {host:"portoapicloud-mtls.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:["imperva_incapsula"],ports:["80","443"]},
+        {host:"psstore.portoseguro.com.br",ip:"3.164.28.66",waf:"AWS CloudFront",technologies:[],ports:["80","443"]},
+        {host:"queropagar.portoseguro.com.br",ip:"216.239.34.21",waf:"Google Cloud",technologies:["google_cloud"],ports:["80","443"]},
+        {host:"relatorio.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:[],ports:["80","443","8080"]},
+        {host:"relaytrk.apoliceauto.portoseguro.com.br",ip:"161.47.47.234",waf:"Direct",technologies:["asp.net"],ports:["80","443"]},
+        {host:"salvados.portoseguro.com.br",ip:"45.60.4.187",waf:"Direct",technologies:["imperva_incapsula"],ports:["80","443","3000","5000","8080","8443"]},
+        {host:"sbc.portoseguro.com.br",ip:"131.161.97.102",waf:"Direct (Firewalled)",technologies:[],ports:[]},
+        {host:"tableau.portoseguro.com.br",ip:"45.223.45.75",waf:"Imperva",technologies:["imperva_incapsula"],ports:["80","443","8080","8443","9000"]},
+        {host:"wwws.portoseguro.com.br",ip:"45.60.4.187",waf:"Direct",technologies:["imperva_incapsula"],ports:["80","443","3000","5000","8080","8443"]}
+      ]
+    }
+  ]
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  LEGACY COMPAT — maps old globals to new ASM namespace
+//  (Defined in js/asm.js — available when loaded via dashboard.html)
+// ════════════════════════════════════════════════════════════════════════
+const SERVER_MODE = window.SERVER_MODE; // from asm.js
+
+let DATA = (typeof window.ASM !== 'undefined' && ASM.data) ? ASM.data
+  : (SERVER_MODE ? { version: '1.0', generated: null, companies: [] }
+    : ((typeof window.ASM_DATA !== 'undefined') ? window.ASM_DATA : DEMO_DATA));
+
+// Keep DATA in sync with ASM namespace
+if (typeof window.ASM !== 'undefined') {
+  if (!ASM.data || !ASM.data.companies || !ASM.data.companies.length) {
+    // If ASM.data is empty/default, use our DEMO_DATA
+    ASM.data = DEMO_DATA;
+    DATA = ASM.data;
+  } else {
+    if (!ASM.data.companies) ASM.data.companies = [];
+    DATA = ASM.data;
+  }
+  ASM.DEMO_DATA = DEMO_DATA;
+}
+
+function _replaceCompanyInData(company) {
+  if (typeof ASM !== 'undefined' && ASM.replaceCompanyInData) {
+    ASM.replaceCompanyInData(company);
+    return;
+  }
+  if (!company || !company.id) return;
+  const companies = DATA.companies || [];
+  const idx = companies.findIndex(c => c.id === company.id);
+  if (idx >= 0) companies[idx] = company;
+  else companies.push(company);
+}
+
+// ── API error helper ─────────────────────────────────────────────────────────
+async function _apiErr(r) {
+  if (r.status === 401) {
+    // Only redirect to login if we have no token at all (not just a server-side expiry)
+    const hasToken = !!(authToken || (function(){ try { return localStorage.getItem('asmToken'); } catch(_){ return null; } })());
+    if (!hasToken && typeof showLoginScreen === 'function') showLoginScreen();
+    return new Error('Session expired — please sign in again');
+  }
+  try {
+    const d = await r.clone().json();
+    return new Error(d.error || d.message || `HTTP ${r.status}`);
+  } catch(_) {
+    return new Error(`HTTP ${r.status}`);
+  }
+}
+
+// These are provided by js/api.js when available
+if (typeof loadServerSummary === 'undefined') {
+  window.loadServerSummary = async function() {
+    if (!SERVER_MODE) return;
+    const r = await fetch('/api/data/summary', { headers: _authHeaders() });
+    if (!r.ok) throw await _apiErr(r);
+    const d = await r.json();
+    // Mutate in place so DATA stays in sync with ASM.data
+    DATA.version = d.version || DATA.version;
+    DATA.generated = d.generated || DATA.generated;
+    DATA.companies = d.companies || [];
+  };
+}
+if (typeof ensureCompanyLoaded === 'undefined') {
+  window.ensureCompanyLoaded = async function(id, opts = {}) {
+    if (!SERVER_MODE || !id) return allCompanies().find(c => c.id === id);
+    const existing = allCompanies().find(c => c.id === id);
+    if (existing && !existing.summary_only && !opts.force) return existing;
+    const r = await fetch(`/api/data/company/${encodeURIComponent(id)}`, { headers: _authHeaders() });
+    if (!r.ok) throw await _apiErr(r);
+    const d = await r.json();
+    _replaceCompanyInData(d);
+    return d;
+  };
+}
+if (typeof reloadServerData === 'undefined') {
+  window.reloadServerData = async function() {
+    if (!SERVER_MODE) return;
+    try {
+      await loadServerSummary();
+      if (ASM && ASM.currentId) await ensureCompanyLoaded(ASM.currentId, { force: true });
+      else if (state && state.currentId) await ensureCompanyLoaded(state.currentId, { force: true });
+    } catch(e) {}
+    try {
+      const r2 = await fetch('/api/companies', { headers: _authHeaders() });
+      if (!r2.ok) return;
+      const cos = await r2.json();
+      const dataIds = new Set((DATA.companies || []).map(c => c.id));
+      for (const co of cos) {
+        if (!dataIds.has(co.id)) {
+          DATA.companies = DATA.companies || [];
+          DATA.companies.push({ ...co,
+            stats: { subdomains: 0, live_hosts: 0, open_ports: 0, waf_protected: 0,
+              findings_critical: 0, findings_high: 0, findings_medium: 0, findings_low: 0, findings_info: 0 },
+            waf_coverage: {}, tech_summary: {}, findings: [], hosts: [], buckets: [] });
+        }
+      }
+    } catch(e) {}
+  };
+}
+
+// State object — use ASM when available, fallback to local
+const state = (typeof ASM !== 'undefined') ? ASM : {
+  currentId: null, page: 'companies', tab: 'overview',
+  hostsPage: 1, portsPage: 1,
+  hostsFilter: { q: '', waf: '', status: '' },
+  findFilter: { q: '', sev: '', cat: '' },
+  portsFilter: { q: '', port: '' },
+  hostsData: [], portsData: [], findData: [],
+  mobileNavOpen: false,
+};
+if (!state.page) state.page = "companies";
+if (!state.hostPanel) state.hostPanel = "domains";
+
+let _jobsPoll = null;
+let _jobCountPoll = null;  // always-on job count updater for nav badge
+let _companyQueueSummaryCache = [];
+let _companyQueueSummaryLoading = false;
+let _companyQueueSummaryLoaded = false;
+
+function _cardKPI({ cls = "", value = "0", label = "", note = "" }) {
+  return `
+    <div class="portfolio-kpi ${cls}">
+      <div class="value">${esc(value)}</div>
+      <div class="label">${esc(label)}</div>
+      ${note ? `<div class="job-detail-copy" style="margin-top:8px">${esc(note)}</div>` : ""}
+    </div>`;
+}
+
+function _jobKPICard(status, count) {
+  const label = _jobStatusLabel(status);
+  return `
+    <div class="job-kpi ${_jobStatusClass(status)}">
+      <div class="job-kpi-num">${Number(count || 0)}</div>
+      <div class="job-kpi-label">${esc(label)}</div>
+    </div>`;
+}
+
+function _companyScopeCount(co) {
+  return Array.isArray(co?.domains) ? co.domains.filter(Boolean).length : 0;
+}
+
+function _companyScopeLabel(co) {
+  const total = _companyScopeCount(co);
+  return `${total.toLocaleString()} ${total === 1 ? "dominio" : "dominios"} no escopo`;
+}
+
+function _companyQueueCounts(co) {
+  const scopeTotal = _companyScopeCount(co);
+  const summary = _companyQueueSummaryCache.find(s => String(s.company_id || "") === String(co?.id || ""));
+  if (!summary) return { done: 0, queued: scopeTotal };
+  const counts = summary.counts || {};
+  return {
+    done: Number(counts.done || 0),
+    queued: Number(counts.pending || 0) + Number(counts.running || 0),
+  };
+}
+
+function _companyQueueProgress(co) {
+  const summary = _companyQueueSummaryCache.find(s => String(s.company_id || "") === String(co?.id || ""));
+  if (!summary) return null;
+  const c = summary.counts || {};
+  const total = Number(summary.total || 0);
+  const done = Number(c.done || 0);
+  const running = Number(c.running || 0);
+  const pending = Number(c.pending || 0);
+  const stopped = Number(c.stopped || 0);
+  const error = Number(c.error || 0);
+  const cancelled = Number(c.cancelled || 0);
+  const active = running + pending;
+  if (!total) return null;
+  const completed = done + stopped + error + cancelled;
+  const rawPct = Math.min(100, ((completed + (running ? 0.5 : 0)) / total) * 100);
+  const pct = active ? Math.max(rawPct, 2) : rawPct;
+  return {total, done, running, pending, stopped, error, cancelled, active, pct};
+}
+
+function _ensureCompanyQueueSummary() {
+  if (!SERVER_MODE || _companyQueueSummaryLoaded || _companyQueueSummaryLoading) return;
+  _companyQueueSummaryLoading = true;
+  fetch("/api/jobs/summary", {headers:_authHeaders()})
+    .then(r => r.ok ? r.json() : [])
+    .then(summary => {
+      _companyQueueSummaryCache = Array.isArray(summary) ? summary : [];
+      _companyQueueSummaryLoaded = true;
+      if (state.page === "companies") renderAllCompanies();
+    })
+    .catch(() => { _companyQueueSummaryLoaded = true; })
+    .finally(() => { _companyQueueSummaryLoading = false; });
+}
+
+function _playwrightCard(job, opts = {}) {
+  const meta = opts.meta || _fmtJobTime(job.created_at);
+  const company = esc(_companyNameForJob(job.company_id));
+  const target = esc(job.target || opts.target_url || "—");
+  const status = _jobStatusLabel(job.status);
+  const badges = [
+    job.status === "done" ? `<a class="playwright-item-badge done" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Report</a>` : "",
+    job.status === "done" ? `<a class="playwright-item-badge done" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Session</a>` : "",
+    `<button class="playwright-item-badge" style="cursor:pointer" onclick="openJobDetail(${_jsArg(job.id)})">Details</button>`,
+  ].join("");
+  return `
+    <article class="playwright-item">
+      <div class="playwright-item-head">
+        <div>
+          <div class="playwright-item-title">${company}</div>
+          <div class="playwright-item-sub">${target}</div>
+        </div>
+        <span class="playwright-item-badge ${_jobStatusClass(job.status)}">${status}</span>
+      </div>
+      <div class="playwright-item-sub" style="margin-top:8px">${esc(meta)}</div>
+      <div class="playwright-item-sub" id="pw-inventory-${escAttr(job.id)}" style="margin-top:8px">${opts.inventory || ""}</div>
+      <div class="playwright-item-badges">${badges}</div>
+    </article>`;
+}
+
+async function _hydratePlaywrightInventory(job) {
+  if (!job || job.job_type !== "playwright_recon") return;
+  const mount = document.getElementById(`pw-inventory-${job.id}`);
+  if (!mount) return;
+  mount.innerHTML = `<span style="color:var(--text3)">Loading host inventory…</span>`;
+  try {
+    const r = await fetch(_jobArtifactUrl(job.id, "session"), {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const session = await r.json();
+    mount.innerHTML = _playwrightInventorySummary(session);
+  } catch(e) {
+    mount.innerHTML = `<span style="color:var(--text3)">Inventory unavailable</span>`;
+  }
+}
+
+function _hydratePlaywrightInventoryBatch(jobs) {
+  (jobs || []).filter(job => job.job_type === "playwright_recon").slice(0, 4).forEach(job => {
+    _hydratePlaywrightInventory(job);
+  });
+}
+
+function _severityCard(severity, count) {
+  const classes = { critical: "c", high: "h", medium: "m", info: "i" };
+  const labels = { critical: "Critical", high: "High", medium: "Medium", info: "Info" };
+  return `
+    <div class="findings-mini ${classes[severity] || ""}">
+      <div class="findings-mini-num">${Number(count || 0)}</div>
+      <div class="findings-mini-lbl">${labels[severity] || severity || "Info"}</div>
+    </div>`;
+}
+
+function _hostTableRow(h) {
+  const techs = (h.technologies || []).map(t => `<span class="tech-c">${esc(t)}</span>`).join("");
+  const ports = (h.ports || []).map(p => `<span class="port-c">${esc(p)}</span>`).join("");
+  const title = (h.title || "").substring(0, 80);
+  const screenshot = h.screenshot
+    ? `<img src="${esc('/' + h.screenshot)}" style="width:48px;height:30px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer" onerror="this.style.display='none'" onmouseenter="ssPopoverShow(event,${JSON.stringify('/' + h.screenshot).replace(/"/g,'&quot;')},${JSON.stringify(h.host || '').replace(/"/g,'&quot;')})" onmouseleave="ssPopoverHide()">`
+    : `<span style="color:var(--text3);font-size:.6rem">—</span>`;
+  return `
+    <tr>
+      <td><a class="host-a" href="https://${esc(h.host)}" target="_blank">${esc(h.host)}</a></td>
+      <td><span class="ip-t">${esc(h.ip)}</span></td>
+      <td><span style="font-size:.7rem;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block" title="${esc(title)}">${esc(title) || '—'}</span></td>
+      <td><span class="waf-t ${wafClass(h.waf)}">${esc(h.waf)}</span></td>
+      <td>${techs || `<span style="color:var(--text3);font-size:.65rem">—</span>`}</td>
+      <td>${ports || `<span style="color:var(--text3);font-size:.65rem">—</span>`}</td>
+      <td>${screenshot}</td>
+    </tr>`;
+}
+
+function _infraCard(title, rows, attrs = "") {
+  return `
+    <div class="ic" ${attrs}>
+      <div class="ic-title">${esc(title)}</div>
+      ${(rows || []).join("")}
+    </div>`;
+}
+
+function _infraRow(key, value, cls = "") {
+  return `<div class="ic-row"><span class="ic-k">${esc(key)}</span><span class="ic-v ${cls}">${value}</span></div>`;
+}
+
+function _portSummaryCard(label, value, accent = "") {
+  return `
+    <div class="job-kpi ${accent}">
+      <div class="job-kpi-num">${Number(value || 0)}</div>
+      <div class="job-kpi-label">${esc(label)}</div>
+    </div>`;
+}
+
+function _filteredHighRiskPorts(rows) {
+  const seen = new Set();
+  return (rows || []).filter(row => {
+    const port = String(row.port || "").trim();
+    if (!_isHighRiskPort(port, row.service || "")) return false;
+    const key = `${row.ip || ""}:${port}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(row => ({
+    ...row,
+    service: _portServiceLabel(row.port, row.service || ""),
+  }));
+}
+
+function _portRiskRow(h) {
+  return `
+    <div style="display:flex;gap:12px;align-items:center;padding:6px 10px;border-bottom:1px solid rgba(244,63,94,0.12)">
+      <span style="font-family:var(--mono);font-size:.71rem;color:var(--text2);min-width:120px">${esc(h.ip||'')}</span>
+      <span style="font-family:var(--mono);font-size:.71rem;font-weight:700;color:#f43f5e;min-width:45px">:${h.port}</span>
+      <span style="font-size:.68rem;color:var(--text3)">${esc(h.service||'')}</span>
+      <span class="sev ${h.severity==='critical'?'sev-c':'sev-h'}" style="margin-left:auto;font-size:.59rem">${(h.severity||'high').toUpperCase()}</span>
+    </div>`;
+}
+
+function _toolsStat(value, label, color = "var(--text)") {
+  return `<div class="tools-stat"><span class="tools-stat-num" style="color:${color}">${esc(value)}</span><div class="tools-stat-lbl">${esc(label)}</div></div>`;
+}
+
+function _timelineRow(e) {
+  const ports = Array.isArray(e.ports) ? e.ports.join(', ') : e.ports;
+  return `
+    <div class="timeline-item">
+      <div class="timeline-dot new"></div>
+      <div class="timeline-info">
+        <div class="timeline-host">${esc(e.host)}</div>
+        <div class="timeline-meta">
+          <span>IP: ${esc(e.ip||'?')}</span>
+          <span>Ports: ${esc(ports)}</span>
+          <span>Status: ${esc(e.status_code||'?')}</span>
+          ${e.waf ? `<span>WAF: ${esc(e.waf)}</span>` : ''}
+        </div>
+      </div>
+      <div class="timeline-ts">${esc((e.scan_ts||'').slice(0,16))}</div>
+    </div>`;
+}
+
+// ── Always-polling job count badge for the sidebar nav ──
+function _startJobCountPoll() {
+  if (_jobCountPoll) return;
+  _updateJobCountBadge();
+  _jobCountPoll = setInterval(_updateJobCountBadge, 8000);
+}
+function _updateJobCountBadgeFromList(jobs) {
+  const badge = document.getElementById("nav-jobs-badge");
+  const pwBadge = document.getElementById("nav-playwright-badge");
+  const topPwBadge = document.getElementById("topbar-playwright-badge");
+  if (!badge) return;
+  const running = jobs.filter(j => j.status === "running").length;
+  const pending = jobs.filter(j => j.status === "pending").length;
+  const errors  = jobs.filter(j => j.status === "error").length;
+  const playwrightActive = jobs.filter(j => j.job_type === "playwright_recon" && (j.status === "running" || j.status === "pending")).length;
+  const total   = running + pending;
+  if (total > 0) {
+    badge.style.display = "inline-flex";
+    badge.textContent = total;
+    badge.className = "nav-badge pulse";
+    setTimeout(() => { if (badge.classList.contains("pulse")) badge.classList.remove("pulse"); }, 700);
+    if (errors > 0) badge.classList.add("has-errors");
+  } else {
+    badge.style.display = "none";
+  }
+  if (pwBadge) {
+    if (playwrightActive > 0) {
+      pwBadge.style.display = "inline-flex";
+      pwBadge.textContent = String(playwrightActive);
+      pwBadge.className = "nav-badge pulse";
+      pwBadge.title = `${playwrightActive} Playwright job(s) active`;
+      setTimeout(() => { if (pwBadge.classList.contains("pulse")) pwBadge.classList.remove("pulse"); }, 700);
+    } else {
+      pwBadge.style.display = "none";
+    }
+  }
+  if (topPwBadge) {
+    if (playwrightActive > 0) {
+      topPwBadge.style.display = "inline-flex";
+      topPwBadge.textContent = `${playwrightActive} Playwright`;
+      topPwBadge.className = "topbar-pw-badge pulse";
+      topPwBadge.onclick = () => openJobsQueue("playwright_recon");
+      setTimeout(() => { if (topPwBadge.classList.contains("pulse")) topPwBadge.classList.remove("pulse"); }, 700);
+    } else {
+      topPwBadge.style.display = "none";
+    }
+  }
+}
+
+async function _updateJobCountBadge() {
+  try {
+    const r = await fetch("/api/jobs?limit=50", {headers: _authHeaders()});
+    if (!r.ok) return;
+    _updateJobCountBadgeFromList(await r.json());
+  } catch(e) {}
+}
+
+let extraCompanies = (typeof ASM !== 'undefined' && ASM.extraCompanies) ? ASM.extraCompanies
+  : (function(){ try { return JSON.parse(localStorage.getItem('asm_extra_companies') || '[]'); } catch(e) { return []; } })();
+
+function allCompanies() {
+  if (typeof ASM !== 'undefined' && ASM.allCompanies) return ASM.allCompanies();
+  return [...(DATA.companies || []), ...(extraCompanies || [])];
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  NAVIGATION
+//  NAVIGATION
+// ════════════════════════════════════════════════════════════════════════
+function showAll() { showPage("companies"); }
+
+function _syncSidebarActive() {
+  document.querySelectorAll(".sidebar-nav .nav-item").forEach(el => el.classList.remove("active"));
+  document.querySelectorAll(".nav-co").forEach(el => el.classList.remove("active"));
+  const page = state.page || (state.currentId ? "company" : "companies");
+  const pageNav = {
+    companies: "nav-all",
+    jobs: "nav-jobs",
+    tools: "nav-tools",
+    admins: "nav-admins",
+    runtime: "nav-runtime",
+  };
+  if (page === "company" && state.currentId) {
+    document.querySelectorAll(".nav-co").forEach(el => {
+      if (String(el.dataset.id || "") === String(state.currentId)) el.classList.add("active");
+    });
+    return;
+  }
+  const id = pageNav[page];
+  if (id) document.getElementById(id)?.classList.add("active");
+}
+
+function _showCompaniesView() {
+  state.page = "companies";
+  state.currentId = null;
+  stopLiveDataPolling();
+  stopCompanyPipelineSync();
+  closeMobileNav();
+  document.body.classList.add("executive-home");
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-all").classList.add("active");
+  _syncSidebarActive();
+  document.getElementById("crumb-sep").style.display = "none";
+  document.getElementById("crumb-current").textContent = "";
+  document.getElementById("topbar-pill").innerHTML = "";
+  renderAllCompanies();
+}
+
+let _companyPipelineSyncInterval = null;
+
+function stopCompanyPipelineSync() {
+  if (_companyPipelineSyncInterval) {
+    clearInterval(_companyPipelineSyncInterval);
+    _companyPipelineSyncInterval = null;
+  }
+}
+
+async function refreshCompanyPipelineState(companyId, { render = true } = {}) {
+  if (!companyId || !SERVER_MODE) return null;
+  try {
+    const r = await fetch(`/api/recon/${companyId}/pipeline`, {headers: _authHeaders()});
+    if (!r.ok) return null;
+    const ps = await r.json();
+    pipelineState[companyId] = ps;
+
+    if (!reconState[companyId]) reconState[companyId] = {};
+    (ps.phases || []).forEach(ph => (ph.modules || []).forEach(m => {
+      if (m.status !== "not_run") reconState[companyId][m.module] = {status: m.status};
+    }));
+
+    if (render) {
+      // renderPipelineStatus updates the live phase HUD in place. We must NOT
+      // rebuild the whole recon tab here: renderReconTab() re-fetches the
+      // Playwright session artifact on every poll, which spammed the server
+      // with one artifact/session request every 4s (403 loop on done jobs).
+      renderPipelineStatus(companyId);
+      const co = allCompanies().find(c => c.id === companyId);
+      if (co && state.currentId === companyId) {
+        renderOverview(co);
+        renderAllCompanies();
+      }
+    }
+    return ps;
+  } catch (e) {
+    return null;
+  }
+}
+
+function startCompanyPipelineSync(companyId) {
+  stopCompanyPipelineSync();
+  if (!companyId || !SERVER_MODE) return;
+  refreshCompanyPipelineState(companyId, {render: true});
+  _companyPipelineSyncInterval = setInterval(() => {
+    refreshCompanyPipelineState(companyId, {render: true});
+  }, 4000);
+}
+
+function exportHTMLReport(co) {
+  if (!co) return;
+  const findings = co.findings || [];
+  const hosts = co.hosts || [];
+  const now = new Date().toLocaleString('pt-BR');
+
+  const sevCounts = {
+    critical: findings.filter(f=>f.severity==='critical').length,
+    high:     findings.filter(f=>f.severity==='high').length,
+    medium:   findings.filter(f=>f.severity==='medium').length,
+    low:      findings.filter(f=>f.severity==='low').length,
+    info:     findings.filter(f=>f.severity==='info').length,
+  };
+
+  const findingsHTML = ['critical','high','medium','low','info'].flatMap(sev =>
+    findings.filter(f=>f.severity===sev).map(f => `
+      <tr>
+        <td><span style="background:${sev==='critical'?'#ef4444':sev==='high'?'#f97316':sev==='medium'?'#eab308':sev==='low'?'#3b82f6':'#6b7280'};color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700">${sev.toUpperCase()}</span></td>
+        <td style="font-weight:600">${f.title||''}</td>
+        <td>${f.host||''}</td>
+        <td>${f.category||f.type||''}</td>
+        <td style="font-size:11px;max-width:300px;word-break:break-word">${f.desc||''}</td>
+      </tr>`)
+  ).join('');
+
+  const hostsHTML = hosts.slice(0,200).map(h => `
+    <tr>
+      <td style="font-family:monospace">${h.host||''}</td>
+      <td>${h.ip||''}</td>
+      <td>${h.status_code||''}</td>
+      <td>${h.title||''}</td>
+      <td>${h.waf||'Direct'}</td>
+      <td style="font-size:11px">${(h.techs||[]).slice(0,5).join(', ')}</td>
+    </tr>`).join('');
+
+  const attackChains = findings.filter(f=>f.type==='attack_chain');
+  const attackHTML = attackChains.map(f=>`<li><strong>${f.title}</strong> — ${f.desc}</li>`).join('') || '<li>No attack chains identified</li>';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>ASM Report — ${co.name||co.id} — ${now}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 0; background: #fff; color: #1a1a2e; }
+  .cover { background: linear-gradient(135deg, #0f0f23 0%, #1a1a3e 100%); color: #fff; padding: 60px 80px; min-height: 200px; }
+  .cover h1 { font-size: 2.4rem; margin: 0 0 8px; font-weight: 800; }
+  .cover .sub { font-size: 1rem; color: rgba(255,255,255,0.6); margin: 0; }
+  .cover .meta { margin-top: 40px; font-size: 0.85rem; color: rgba(255,255,255,0.5); }
+  .section { padding: 40px 80px; border-bottom: 1px solid #e5e7eb; }
+  h2 { font-size: 1.4rem; color: #0f172a; margin: 0 0 20px; padding-bottom: 8px; border-bottom: 2px solid #6366f1; display: inline-block; }
+  .stat-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { border-radius: 8px; padding: 20px; text-align: center; }
+  .stat-num { font-size: 2.2rem; font-weight: 800; }
+  .stat-lbl { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 16px; }
+  th { background: #f8fafc; text-align: left; padding: 10px 12px; font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; border-bottom: 2px solid #e2e8f0; }
+  td { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  tr:hover td { background: #f8fafc; }
+  .chain-list { list-style: none; padding: 0; }
+  .chain-list li { padding: 12px 16px; margin: 8px 0; background: #fff7ed; border-left: 4px solid #f97316; border-radius: 4px; font-size: 13px; }
+  .footer { padding: 20px 80px; font-size: 12px; color: #94a3b8; text-align: center; border-top: 1px solid #e5e7eb; }
+  @media print { .section { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="cover">
+  <h1>Attack Surface Management Report</h1>
+  <p class="sub">Target: ${co.name||co.id||''} &nbsp;|&nbsp; Scope: ${(co.domains||[]).length > 10 ? (co.domains.slice(0,10).join(', ') + ', +' + (co.domains.length - 10) + ' more') : (co.domains||[]).join(', ')}</p>
+  <div class="meta">Generated: ${now} &nbsp;|&nbsp; Classification: CONFIDENTIAL — AUTHORIZED PENTEST</div>
+</div>
+
+<div class="section">
+  <h2>Executive Summary</h2>
+  <div class="stat-grid">
+    <div class="stat-card" style="background:#fef2f2"><div class="stat-num" style="color:#ef4444">${sevCounts.critical}</div><div class="stat-lbl" style="color:#ef4444">Critical</div></div>
+    <div class="stat-card" style="background:#fff7ed"><div class="stat-num" style="color:#f97316">${sevCounts.high}</div><div class="stat-lbl" style="color:#f97316">High</div></div>
+    <div class="stat-card" style="background:#fefce8"><div class="stat-num" style="color:#ca8a04">${sevCounts.medium}</div><div class="stat-lbl" style="color:#ca8a04">Medium</div></div>
+    <div class="stat-card" style="background:#eff6ff"><div class="stat-num" style="color:#3b82f6">${sevCounts.low}</div><div class="stat-lbl" style="color:#3b82f6">Low</div></div>
+    <div class="stat-card" style="background:#f0fdf4"><div class="stat-num" style="color:#16a34a">${hosts.length}</div><div class="stat-lbl" style="color:#16a34a">Live Hosts</div></div>
+  </div>
+  <p style="color:#475569;line-height:1.7">
+    This report covers the external attack surface of <strong>${co.name||co.id}</strong>.
+    The assessment identified <strong>${findings.length} security findings</strong> across
+    <strong>${hosts.length} live hosts</strong> and <strong>${(co.ct_subdomains||[]).length} discovered hosts</strong>.
+    ${sevCounts.critical > 0 ? `<strong style="color:#ef4444">${sevCounts.critical} critical findings require immediate attention.</strong>` : ''}
+  </p>
+</div>
+
+<div class="section">
+  <h2>Attack Chains</h2>
+  <ul class="chain-list">${attackHTML}</ul>
+</div>
+
+<div class="section">
+  <h2>Findings (${findings.length})</h2>
+  <table>
+    <thead><tr><th>Severity</th><th>Title</th><th>Host</th><th>Category</th><th>Description</th></tr></thead>
+    <tbody>${findingsHTML}</tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Live Hosts (${hosts.length})</h2>
+  <table>
+    <thead><tr><th>Hostname</th><th>IP</th><th>Status</th><th>Title</th><th>WAF</th><th>Technologies</th></tr></thead>
+    <tbody>${hostsHTML}</tbody>
+  </table>
+</div>
+
+<div class="footer">
+  ASM Platform — Authorized Security Assessment — ${now} — CONFIDENTIAL
+</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], {type: 'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `asm-report-${(co.id||'target').replace(/[^a-z0-9]/gi,'-')}-${new Date().toISOString().slice(0,10)}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function renderCompanyView(co) {
+  const s = co.stats||{};
+  const _doms = co.domains || [];
+  const _MAXD = 6;
+  const _domSummary = _doms.length
+    ? _doms.slice(0, _MAXD).join("  ·  ") + (_doms.length > _MAXD ? `  ·  +${_doms.length - _MAXD} more` : "")
+    : "No domains";
+  document.getElementById("co-desc").textContent = _domSummary + "  ·  Last scan: " + (co.last_scan||"N/A");
+  document.getElementById("tc-findings").textContent =
+    (s.findings_critical||0)+(s.findings_high||0)+(s.findings_medium||0)+(s.findings_info||0);
+  document.getElementById("tc-cve").textContent = co.cve_summary?.total || 0;
+  document.getElementById("tc-supplychain").textContent = co.supply_chain_summary?.total || 0;
+  document.getElementById("tc-domains").textContent = (co.domains||[]).length || 0;
+  document.getElementById("tc-subdomains").textContent = s.subdomains||0;
+  document.getElementById("tc-ports").textContent = s.open_ports || (co.hosts||[]).filter(h=>(h.ports||[]).length>0).length || 0;
+  const tcOperation = document.getElementById("tc-operation");
+  if (tcOperation) tcOperation.textContent = "";
+  document.getElementById("tc-screenshots").textContent = "";
+  // Async: load counts without blocking render
+  if (SERVER_MODE) {
+    fetch(`/api/screenshots/${co.id}`, {headers:_authHeaders()}).then(r=>r.ok?r.json():[]).then(d=>{
+      const el = document.getElementById("tc-screenshots");
+      if(el && d.length) el.textContent = d.length;
+    }).catch(()=>{});
+    fetch(`/api/data/${co.id}/subhistory`, {headers: _authHeaders()}).then(r=>r.json()).then(d=>{
+      const el = document.getElementById("tc-subhistory");
+      if(el && d.history) el.textContent = d.history.length;
+    }).catch(()=>{});
+  }
+
+  // Count all endpoints (URLs + JS + API)
+  let endpointsTotal = 0;
+  if (co.wayback_data?.interesting_count) endpointsTotal += co.wayback_data.interesting_count;
+  if (co.urlfinder_data?.urls) endpointsTotal += co.urlfinder_data.urls.length;
+  if (co.js_data?.total_endpoints) endpointsTotal += co.js_data.total_endpoints;
+  if (co.api_exposure?.total) endpointsTotal += co.api_exposure.total;
+  document.getElementById("tc-endpoints").textContent = endpointsTotal;
+
+  renderOverview(co);
+  try { setTimeout(initThreatMaps, 50); setTimeout(initThreatMaps, 400); } catch(e) {}
+  try { setTimeout(updateTabScrollBtns, 100); } catch(e) {}
+  renderFindingsTab(co);
+  renderCveTab(co);
+  invalidateEndpointCache(co);
+  renderEndpointsTab(co);
+  renderDomainsTab(co);
+  renderSubdomainsTab(co);
+  renderInfraTab(co);
+  renderTyposquatTab(co);
+  syncCompanyTabsAccessibility(TAB_TO_GROUP[state.tab] || state.tab || "overview");
+  updateGroupCounts();
+  initGroupCountObserver();
+}
+
+async function selectCompany(id) {
+  state.page = "company";
+  state.currentId = id;
+  state.tab = "overview";
+  state.hostsPage = 1;
+  state.portsPage = 1;
+  closeMobileNav();
+  document.body.classList.remove("executive-home");
+
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  if (_jobsPoll) { clearInterval(_jobsPoll); _jobsPoll = null; }
+  document.getElementById("view-company").classList.add("active");
+  _syncSidebarActive();
+
+  let co = allCompanies().find(c=>c.id===id);
+  if (!co) return;
+
+  const rl = riskLevel(co);
+  document.getElementById("crumb-sep").style.display = "";
+  document.getElementById("crumb-current").textContent = co.name;
+  document.getElementById("co-title").textContent = co.name;
+
+  const pillColors = {critical:"red", high:"orange", medium:"orange", low:"green"};
+  document.getElementById("topbar-pill").innerHTML = `
+    <div class="topbar-pill ${pillColors[rl]||'green'}">
+      <span class="pulse"></span>${riskLabel(rl)}
+    </div>`;
+
+  // Show scan + monitor buttons in server mode
+  var scanBtn = document.getElementById("topbar-scan-btn");
+  scanBtn.style.display = SERVER_MODE ? "" : "none";
+  var monBtn = document.getElementById("monitor-now-btn");
+  if (monBtn) monBtn.style.display = SERVER_MODE ? "" : "none";
+  var schBtn = document.getElementById("enable-schedule-btn");
+  if (schBtn) schBtn.style.display = SERVER_MODE ? "" : "none";
+  if (schBtn && SERVER_MODE) loadScheduleStatus(id);
+
+  // Reset active tab button
+  document.querySelectorAll(".tab-btn").forEach((b,i)=>b.classList.toggle("active",i===0));
+  document.querySelectorAll(".tab-content").forEach((t,i)=>t.classList.toggle("active",i===0));
+  syncCompanyTabsAccessibility("overview");
+
+  if (SERVER_MODE && co.summary_only) {
+    renderCompanyLoading(id);
+    try {
+      co = await ensureCompanyLoaded(id);
+    } catch (e) {
+      document.getElementById("co-desc").textContent = `Error loading company details: ${e.message}`;
+      return;
+    }
+  }
+  renderCompanyView(co);
+  if (SERVER_MODE) startCompanyPipelineSync(id);
+  if (SERVER_MODE) { loadTrendCharts(id); loadSuppressedFindings(id); }
+  // Always poll for live data while viewing a company
+  startLiveDataPolling(id);
+  // Update URL hash for browser history
+  if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('company/' + id + '/overview');
+}
+
+const TAB_GROUPS = {
+  overview:    ['overview'],
+  hosts:       ['domains', 'subdomains'],
+  screenshots: ['screenshots'],
+  operation:   ['operation'],
+  infragroup:  ['infra'],
+  logs:        ['toollogs'],
+  pipeline:    ['pipeline', 'terminal']
+};
+const TAB_TO_GROUP = {};
+(function() { for (const [g, tabs] of Object.entries(TAB_GROUPS)) tabs.forEach(t => TAB_TO_GROUP[t] = g); })();
+
+async function switchGroup(groupName, btn) {
+  const tabs = groupName === "hosts"
+    ? [state.hostPanel || "domains"]
+    : (TAB_GROUPS[groupName] || [groupName]);
+  state.tab = tabs[0];
+  state.activeGroup = groupName;
+
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  tabs.forEach(t => { const el = document.getElementById('tab-' + t); if (el) el.classList.add('active'); });
+
+  syncCompanyTabsAccessibility(groupName);
+
+  const co = allCompanies().find(c => c.id === state.currentId);
+  for (const name of tabs) {
+    if (name === 'domains'      && co)              renderDomainsTab(co);
+    if (name === 'subdomains'   && co)              renderSubdomainsTab(co);
+    if (name === 'endpoints'    && co)              renderEndpointsTab(co);
+    if (name === 'pipeline'     && state.currentId) await renderReconTab(state.currentId);
+    if (name === 'supplychain'  && co)              renderSupplyChainTab(co);
+    if (name === 'jsreverse'    && co)              renderJsReverseTab(co);
+    if (name === 'vulns'        && co)              renderVulnsTab(co);
+    if (name === 'operation'    && co)              renderOperationTab(co);
+    if (name === 'infra'        && co)              renderInfraTab(co);
+    if (name === 'screenshots'  && state.currentId) loadScreenshots(state.currentId, co);
+    if (name === 'toollogs'     && state.currentId) {
+      await loadToolLogs();
+    }
+    if (name === 'terminal'     && state.currentId) renderLiveTerminal(state.currentId);
+    if (name === 'alerts'       && co)              renderAlertsTab(co);
+    if (name === 'timeline'     && co)              renderTimelineTab(co);
+    if (name === 'diff'         && co)              renderDiffTab(co);
+  }
+
+  if (typeof ASM !== 'undefined' && ASM.updateHash && state.currentId) {
+    ASM.updateHash('company/' + state.currentId + '/' + tabs[0]);
+  }
+  if (btn) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  updateTabScrollBtns();
+}
+
+async function switchTab(name, btn) {
+  if (name === "domains" || name === "subdomains") {
+    state.hostPanel = name;
+    const groupBtn = document.querySelector('.tab-btn[data-group="hosts"]') || btn;
+    return switchGroup("hosts", groupBtn);
+  }
+  const groupName = TAB_TO_GROUP[name] || name;
+  const groupBtn = document.querySelector(`.tab-btn[data-group="${groupName}"]`) || btn;
+  return switchGroup(groupName, groupBtn);
+}
+
+function switchHostsPanel(panel) {
+  if (panel !== "domains" && panel !== "subdomains") return;
+  state.hostPanel = panel;
+  const groupBtn = document.querySelector('.tab-btn[data-group="hosts"]');
+  switchGroup("hosts", groupBtn);
+}
+
+function scrollTabBar(dir) {
+  const tb = document.getElementById('co-tabs');
+  if (!tb) return;
+  tb.scrollBy({ left: dir * 220, behavior: 'smooth' });
+  setTimeout(updateTabScrollBtns, 280);
+}
+
+function updateTabScrollBtns() {
+  const tb = document.getElementById('co-tabs');
+  const lBtn = document.getElementById('tab-scroll-left');
+  const rBtn = document.getElementById('tab-scroll-right');
+  if (!tb || !lBtn || !rBtn) return;
+  const atStart = tb.scrollLeft <= 2;
+  const atEnd   = tb.scrollLeft >= tb.scrollWidth - tb.clientWidth - 2;
+  lBtn.style.display = atStart ? 'none' : 'flex';
+  rBtn.style.display = atEnd   ? 'none' : 'flex';
+}
+
+const _GC_DEFS = {
+  hosts:      ['domains', 'subdomains'],
+  screenshots:['screenshots'],
+  operation:  ['operation'],
+  logs:       ['toollogs'],
+};
+
+function updateGroupCounts() {
+  for (const [group, ids] of Object.entries(_GC_DEFS)) {
+    const total = ids.reduce((s, id) => {
+      const el = document.getElementById('tc-' + id);
+      return s + (el ? parseInt(el.textContent) || 0 : 0);
+    }, 0);
+    const el = document.getElementById('gc-' + group);
+    if (el) el.textContent = total > 0 ? total : '';
+  }
+}
+
+function initGroupCountObserver() {
+  const hidden = document.getElementById('tc-hidden');
+  if (!hidden || hidden._gcObserved) return;
+  hidden._gcObserved = true;
+  new MutationObserver(updateGroupCounts).observe(hidden, { subtree: true, characterData: true, childList: true });
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SIDEBAR
+// ════════════════════════════════════════════════════════════════════════
+function renderSidebar() {
+  const el = document.getElementById("company-nav-items");
+  const companyViewActive = state.page === "company";
+  el.innerHTML = allCompanies().map(co => {
+    const rl = riskLevel(co);
+    const s = co.stats||{};
+    const domain = (co.domains||[])[0]||"";
+    const sideEditBtn = SERVER_MODE
+      ? `<span class="nc-edit" onclick="event.stopPropagation();openEditCompanyModal('${co.id}')" title="Edit">✏</span>`
+      : "";
+    return `<button class="nav-item nav-company nav-co${companyViewActive && state.currentId === co.id ? " active" : ""}" data-id="${co.id}" onclick="selectCompany('${co.id}')">
+      <div class="nc-top">
+        <span class="nav-icon">◎</span>
+        <span class="nc-name">${esc(co.name)}</span>
+        <span class="nc-risk ${rl}">${(s.findings_critical||0)>0 ? "C:"+s.findings_critical : (s.findings_high||0)>0 ? "H:"+s.findings_high : rl.charAt(0).toUpperCase()+rl.slice(1)}</span>
+        ${sideEditBtn}
+      </div>
+      <span class="nc-domain">${esc(domain)}</span>
+    </button>`;
+  }).join("");
+  _syncSidebarActive();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ALL COMPANIES VIEW
+// ════════════════════════════════════════════════════════════════════════
+function renderAllCompanies() {
+  _ensureCompanyQueueSummary();
+  const companies = allCompanies();
+  const grid = document.getElementById("companies-grid");
+  const empty = document.getElementById("all-empty");
+  const overview = document.getElementById("portfolio-overview");
+
+  const totalC = companies.reduce((a,c)=>a+(c.stats?.findings_critical||0),0);
+  const totalH = companies.reduce((a,c)=>a+(c.stats?.findings_high||0),0);
+  const totalM = companies.reduce((a,c)=>a+(c.stats?.findings_medium||0),0);
+  const totalI = companies.reduce((a,c)=>a+(c.stats?.findings_info||0),0);
+  const totalHosts = companies.reduce((a,c)=>a+(c.stats?.subdomains||0),0);
+  const totalLive = companies.reduce((a,c)=>a+(c.stats?.live_hosts||0),0);
+  const totalEndpoints = companies.reduce((a, c) => {
+    const wayback = c.wayback_data?.interesting_count || 0;
+    const urlfinder = Array.isArray(c.urlfinder_data?.urls) ? c.urlfinder_data.urls.length : 0;
+    const js = c.js_data?.total_endpoints || 0;
+    const api = c.api_exposure?.total || 0;
+    return a + wayback + urlfinder + js + api;
+  }, 0);
+  const totalVulns = totalC + totalH + totalM + totalI;
+  const topRisk = [...companies].sort((a,b)=> {
+    const sa = a.stats || {};
+    const sb = b.stats || {};
+    const ra = (sa.findings_critical||0) * 100 + (sa.findings_high||0) * 20 + (sa.findings_medium||0) * 5 + (sa.findings_info||0);
+    const rb = (sb.findings_critical||0) * 100 + (sb.findings_high||0) * 20 + (sb.findings_medium||0) * 5 + (sb.findings_info||0);
+    return rb - ra;
+  }).slice(0, 3);
+  const topCompany = topRisk[0];
+  const topTargetCount = topCompany
+    ? ((topCompany.stats?.findings_critical||0) + (topCompany.stats?.findings_high||0) + (topCompany.stats?.findings_medium||0) + (topCompany.stats?.findings_info||0))
+    : 0;
+  const severityBreakdown = [
+    { key: "critical", label: "Critical", count: totalC, color: "var(--red)" },
+    { key: "high", label: "High", count: totalH, color: "var(--orange)" },
+    { key: "medium", label: "Medium", count: totalM, color: "var(--yellow)" },
+    { key: "info", label: "Info", count: totalI, color: "var(--blue)" },
+  ];
+  const severityTotal = severityBreakdown.reduce((a, s) => a + s.count, 0);
+  let severityParts = [];
+  let start = 0;
+  for (const s of severityBreakdown) {
+    const span = severityTotal > 0 ? (s.count / severityTotal) * 100 : 0;
+    const end = start + span;
+    severityParts.push(`${s.color} ${start.toFixed(2)}% ${end.toFixed(2)}%`);
+    start = end;
+  }
+  if (!severityParts.length) severityParts = ["var(--border2) 0% 100%"];
+  const findingFreq = new Map();
+  const findingMeta = new Map();
+  for (const co of companies) {
+    for (const f of (co.findings || [])) {
+      const title = (f.title || f.name || "").trim();
+      if (!title) continue;
+      findingFreq.set(title, (findingFreq.get(title) || 0) + 1);
+      if (!findingMeta.has(title)) findingMeta.set(title, f);
+    }
+  }
+  const commonFindings = [...findingFreq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([title, count]) => ({ title, count, item: findingMeta.get(title) }));
+  document.getElementById("all-desc").textContent =
+    `${companies.length} companies · ${totalVulns.toLocaleString()} vulnerabilities · ${totalHosts.toLocaleString()} hosts · ${totalEndpoints.toLocaleString()} endpoints`;
+
+  if (overview) {
+    overview.innerHTML = `
+      <div class="portfolio-hero">
+        <div class="portfolio-hero-top">
+          <div>
+            <div class="rh-kicker">Portfolio Overview</div>
+            <div class="rh-title">Attack surface at a glance</div>
+            <div class="rh-sub">Executive view for all companies, with severity distribution, top risk targets and repeated findings across the portfolio.</div>
+          </div>
+          <div class="portfolio-hero-actions">
+            <button class="btn btn-secondary" onclick="showPage('jobs'); loadJobs();">Open Queue</button>
+            <button class="btn btn-primary" onclick="openAddCompany()">Add Company</button>
+          </div>
+        </div>
+        <div class="portfolio-kpis">
+          ${_cardKPI({ cls: "c", value: companies.length, label: "Targets", note: "Companies tracked" })}
+          ${_cardKPI({ cls: "h", value: totalHosts, label: "Hosts", note: `${totalLive.toLocaleString()} live / HTTP reachable` })}
+          ${_cardKPI({ cls: "m", value: totalEndpoints, label: "Endpoints", note: "URLs + JS + API signals" })}
+          ${_cardKPI({ cls: "i", value: totalVulns, label: "Vulnerabilities", note: `${totalC.toLocaleString()} critical · ${totalH.toLocaleString()} high` })}
+        </div>
+        <div class="portfolio-dashboard">
+          <section class="portfolio-panel portfolio-severity-panel">
+            <div class="portfolio-panel-head">
+              <div>
+                <div class="portfolio-panel-kicker">Severity breakdown</div>
+                <div class="portfolio-panel-title">Vulnerability distribution</div>
+                <div class="portfolio-panel-sub">Portfolio-wide counts by severity.</div>
+              </div>
+            </div>
+            <div class="severity-wrap">
+              <div class="severity-donut" style="--severity-gradient:${escAttr(`conic-gradient(${severityParts.join(", ")})`)}">
+                <div class="severity-donut-center">
+                  <div class="severity-donut-total">${totalVulns.toLocaleString()}</div>
+                  <div class="severity-donut-label">Total</div>
+                </div>
+              </div>
+              <div class="severity-legend">
+                ${severityBreakdown.map(s => `
+                  <div class="severity-legend-row">
+                    <div class="severity-legend-key">
+                      <span class="severity-swatch" style="background:${s.color}"></span>
+                      ${esc(s.label)}
+                    </div>
+                    <div class="severity-legend-count">${s.count.toLocaleString()}</div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          </section>
+          <section class="portfolio-panel portfolio-target-panel">
+            <div class="portfolio-panel-head">
+              <div>
+                <div class="portfolio-panel-kicker">Most vulnerable target</div>
+                <div class="portfolio-panel-title">Highest concentration of findings</div>
+                <div class="portfolio-panel-sub">Use this as the first pivot for deeper triage.</div>
+              </div>
+            </div>
+            ${topCompany ? `
+              <div class="portfolio-table">
+                <div class="portfolio-table-row portfolio-table-head">
+                  <span>Target</span>
+                  <span>Risk</span>
+                  <span>Findings</span>
+                </div>
+                <div class="portfolio-table-row">
+                  <div class="portfolio-target-cell">
+                    <a class="portfolio-row-host" href="#" onclick="selectCompany(${_jsArg(topCompany.id)});return false;">${esc(topCompany.name)}</a>
+                    <div class="portfolio-row-meta">${(topCompany.domains||[]).slice(0,2).map(esc).join(" · ") || "No domains"} · last scan ${esc(topCompany.last_scan || "—")}</div>
+                  </div>
+                  <span class="portfolio-badge ${riskLevel(topCompany)}">${riskLabel(riskLevel(topCompany))}</span>
+                  <span class="portfolio-count">${topTargetCount.toLocaleString()}</span>
+                </div>
+                ${topRisk.slice(1).map(co => {
+                  const s = co.stats || {};
+                  const count = (s.findings_critical||0)+(s.findings_high||0)+(s.findings_medium||0)+(s.findings_info||0);
+                  const rl = riskLevel(co);
+                  return `
+                    <div class="portfolio-table-row">
+                      <div class="portfolio-target-cell">
+                        <a class="portfolio-row-host" href="#" onclick="selectCompany(${_jsArg(co.id)});return false;">${esc(co.name)}</a>
+                        <div class="portfolio-row-meta">${(co.domains||[]).slice(0,2).map(esc).join(" · ") || "No domains"} · ${s.subdomains||0} hosts</div>
+                      </div>
+                      <span class="portfolio-badge ${rl}">${riskLabel(rl)}</span>
+                      <span class="portfolio-count">${count.toLocaleString()}</span>
+                    </div>`;
+                }).join("")}
+              </div>
+            ` : `
+              <div class="empty-state">
+                <div class="empty-state-title">No targets yet</div>
+                <div class="empty-state-copy">Add a company and run a scan to populate this view.</div>
+              </div>`}
+          </section>
+          <section class="portfolio-panel portfolio-vuln-panel">
+            <div class="portfolio-panel-head">
+              <div>
+                <div class="portfolio-panel-kicker">Most common vulnerabilities</div>
+                <div class="portfolio-panel-title">Repeated findings across the portfolio</div>
+                <div class="portfolio-panel-sub">These titles appear most often in the current dataset.</div>
+              </div>
+            </div>
+            ${commonFindings.length ? `
+              <div class="portfolio-vuln-list">
+                ${commonFindings.map(item => {
+                  const sev = item.item?.severity || "info";
+                  return `
+                    <div class="portfolio-vuln-item">
+                      <div>
+                        <div class="portfolio-vuln-title">${esc(item.title)}</div>
+                        <div class="portfolio-vuln-meta">${esc(item.item?.category || "Finding")} · ${esc(item.item?.host || "Portfolio wide")}</div>
+                      </div>
+                      <div class="portfolio-vuln-count ${sev}">${item.count.toLocaleString()}</div>
+                    </div>`;
+                }).join("")}
+              </div>
+            ` : `
+              <div class="empty-state">
+                <div class="empty-state-title">No vulnerability history yet</div>
+                <div class="empty-state-copy">Scan companies to populate repeated findings here.</div>
+              </div>`}
+          </section>
+        </div>
+      </div>`;
+  }
+
+
+  if (!companies.length) {
+    grid.innerHTML = ""; empty.style.display = "block"; return;
+  }
+  empty.style.display = "none";
+  grid.innerHTML = companies.map(co => {
+    const rl = riskLevel(co);
+    const s = co.stats||{};
+    const hasData = (s.subdomains||0) > 0 || (co.findings||[]).length > 0;
+    const liveInfo = _pipelineCardLiveInfo(co.id);
+    const checkpointInfo = co.checkpoint_diff || null;
+    const endpointsCount = (co.wayback_data?.interesting_count || 0)
+      + (Array.isArray(co.urlfinder_data?.urls) ? co.urlfinder_data.urls.length : 0)
+      + (co.js_data?.total_endpoints || 0)
+      + (co.api_exposure?.total || 0);
+    const findingsCount = (s.findings_critical||0)+(s.findings_high||0)+(s.findings_medium||0)+(s.findings_info||0);
+    const trendFindings = checkpointInfo?.new_findings_count || 0;
+    const trendHosts = checkpointInfo?.new_hosts_count || checkpointInfo?.new_subdomains_count || 0;
+    const queueCounts = _companyQueueCounts(co);
+    const queueProgress = _companyQueueProgress(co);
+    const trendScore = Math.min(100, trendFindings * 18 + trendHosts * 8);
+    const trendText = checkpointInfo
+      ? (trendScore > 0
+        ? `+${trendFindings} findings · +${trendHosts} hosts`
+        : "Stable")
+      : "No diff yet";
+    const progressTitle = queueProgress && queueProgress.active
+      ? "Processo da fila"
+      : "Trend";
+    const progressText = queueProgress && queueProgress.active
+      ? `${queueProgress.done.toLocaleString()} concluidos · ${queueProgress.running.toLocaleString()} rodando · ${queueProgress.pending.toLocaleString()} na fila`
+      : trendText;
+    const progressPct = queueProgress && queueProgress.active ? queueProgress.pct : trendScore;
+    const progressCls = queueProgress && queueProgress.active ? " running" : "";
+    const scanBtn = SERVER_MODE
+      ? `<button class="btn-scan btn-scan-sm" onclick="event.stopPropagation();openScanModal('${co.id}')"><svg viewBox="0 0 16 16" fill="currentColor" style="width:10px;height:10px"><path d="M3 2l10 6-10 6V2z"/></svg> Scan</button>`
+      : "";
+    const editBtn = SERVER_MODE
+      ? `<button class="btn btn-secondary" style="font-size:.65rem;padding:3px 9px;opacity:.7" onclick="event.stopPropagation();openEditCompanyModal('${co.id}')" title="Edit company">✏ Edit</button>`
+      : "";
+    return `<div class="company-card risk-${rl}" onclick="selectCompany('${co.id}')">
+      <div class="cc-top">
+        <div class="cc-left">
+          <div class="cc-name">${esc(co.name)}</div>
+          <div class="cc-domain">${esc(_companyScopeLabel(co))}</div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          ${hasData ? `<span class="cc-risk-badge ${rl}">${riskLabel(rl)}</span>` : scanBtn}
+          ${editBtn}
+        </div>
+      </div>
+      ${hasData ? `
+      <div class="cc-mini">
+        <span>${co.last_scan || "—"}</span>
+        <span>${(co.domains||[]).length} domains</span>
+        <span>${s.live_hosts||0} live</span>
+        <span>${endpointsCount} endpoints</span>
+      </div>
+      ${liveInfo ? `
+      <div class="cc-live ${liveInfo.status}">
+        <span class="cc-live-chip ${liveInfo.status}">${esc(liveInfo.status === "queued" ? "Queued" : "Running")}</span>
+        <div class="cc-live-text">
+          <span class="cc-live-tool">${esc(liveInfo.tool || "starting")}</span>
+          ${liveInfo.phase ? `<span class="cc-live-phase">${esc(liveInfo.phase)}</span>` : ""}
+        </div>
+      </div>` : ""}
+      <div class="cc-trend${progressCls}" title="${queueProgress && queueProgress.active ? `${queueProgress.total.toLocaleString()} jobs totais` : (checkpointInfo ? `Compared to ${esc(checkpointInfo.compared_to || 'previous scan')}` : 'No checkpoint history')}">
+        <div class="cc-trend-head">
+          <span>${esc(progressTitle)}</span>
+          <b>${esc(progressText)}</b>
+        </div>
+        <div class="cc-trend-bar">
+          <div class="cc-trend-fill" style="width:${progressPct}%"></div>
+        </div>
+      </div>
+      <div class="cc-track">
+        <div class="cc-track-item c"><span>Critical</span><b>${s.findings_critical||0}</b></div>
+        <div class="cc-track-item h"><span>High</span><b>${s.findings_high||0}</b></div>
+        <div class="cc-track-item m"><span>Medium</span><b>${s.findings_medium||0}</b></div>
+        <div class="cc-track-item i"><span>Info</span><b>${s.findings_info||0}</b></div>
+        <div class="cc-track-item"><span>Hosts</span><b>${s.subdomains||0}</b></div>
+        <div class="cc-track-item"><span>Live</span><b>${s.live_hosts||0}</b></div>
+        <div class="cc-track-item"><span>WAF</span><b>${s.waf_protected||0}</b></div>
+      </div>
+      <div class="cc-meta">
+        <div>${s.subdomains||0} hosts</div>
+        <div>${findingsCount} findings</div>
+        <div>${s.waf_protected||0} behind WAF</div>
+      </div>` : `
+      <div class="cc-empty">
+        <div class="cc-empty-title">Sem scan concluido ainda</div>
+        <div class="cc-empty-stats">
+          <div class="cc-empty-stat done">
+            <b>${queueCounts.done.toLocaleString()}</b>
+            <span>dominios concluidos</span>
+          </div>
+          <div class="cc-empty-stat queued">
+            <b>${queueCounts.queued.toLocaleString()}</b>
+            <span>dominios na fila</span>
+          </div>
+        </div>
+      </div>`}
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  OVERVIEW TAB — Red Team Executive Summary
+// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════
+//  THREAT MAP — Hexagonal grid canvas
+// ════════════════════════════════════════════════════════════════════════
+let _hexAnimFrame = null;
+function drawThreatMap(canvas, hosts) {
+  try {
+  if (!canvas || !canvas.parentElement) return;
+  // Cancel any existing animation loop on this canvas
+  if (canvas._animFrame) { cancelAnimationFrame(canvas._animFrame); canvas._animFrame = null; }
+  const dpr = window.devicePixelRatio || 1;
+  const parent = canvas.parentElement;
+  const W = parent.offsetWidth  || parent.getBoundingClientRect().width  || 800;
+  const H = parent.offsetHeight || parent.getBoundingClientRect().height || 260;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  // Let CSS width:100%;height:100% control display size — don't set style here
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const hexR = 18, hexGap = 3;
+  const hexW = Math.sqrt(3) * hexR;
+  const hexH = 2 * hexR;
+  const cols = Math.floor(W / (hexW + hexGap)) + 1;
+  const rows = Math.floor(H / (hexH * 0.75 + hexGap)) + 1;
+
+  // Build hex grid with random intensity
+  const hexes = [];
+  const t = Date.now() * 0.0003;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const cx = col * (hexW + hexGap) + (row % 2 ? hexW/2 + hexGap/2 : 0);
+      const cy = row * (hexH * 0.75 + hexGap);
+      const noise = Math.sin(cx * 0.04 + t) * Math.cos(cy * 0.05 + t * 0.7);
+      const intensity = Math.abs(noise);
+      const hasHost = hosts && hosts.length > 0 && (Math.abs(Math.sin(cx * 0.1 + cy * 0.13)) > 0.5);
+      hexes.push({ cx, cy, intensity, hasHost });
+    }
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const now = Date.now() * 0.0002;
+    
+    for (const h of hexes) {
+      const pulse = h.intensity * (0.5 + 0.5 * Math.sin(now * 3 + h.cx * 0.02));
+      let alpha = 0.04 + pulse * 0.06;
+      let stroke = 'rgba(0,229,255,0.12)';
+      let fill = `rgba(0,229,255,${alpha})`;
+
+      if (h.hasHost) {
+        alpha = 0.08 + pulse * 0.12;
+        fill = `rgba(0,229,255,${alpha})`;
+        stroke = 'rgba(0,229,255,0.2)';
+      }
+
+      // Draw hex
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const angle = Math.PI / 3 * i - Math.PI / 6;
+        const x = h.cx + hexR * Math.cos(angle);
+        const y = h.cy + hexR * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
+
+   function animate() {
+     draw();
+     canvas._animFrame = requestAnimationFrame(animate);
+   }
+   animate();
+  } catch(e) { console.error('drawThreatMap:', e); }
+ }
+
+function initThreatMaps() {
+  try {
+    document.querySelectorAll('.threat-map canvas').forEach(canvas => {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      // If parent has no size yet (hidden or not laid out), use ResizeObserver
+      if (parent.offsetWidth === 0) {
+        if (window._tmResizeObs) window._tmResizeObs.disconnect();
+        window._tmResizeObs = new ResizeObserver(entries => {
+          for (const e of entries) {
+            if (e.contentRect.width > 0) {
+              window._tmResizeObs.disconnect();
+              drawThreatMap(canvas, []);
+              break;
+            }
+          }
+        });
+        window._tmResizeObs.observe(parent);
+      } else {
+        drawThreatMap(canvas, []);
+      }
+    });
+  } catch(e) { console.error('initThreatMaps:', e); }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  TENANCY PANEL
+// ════════════════════════════════════════════════════════════════════════
+function openTenancyPanel() {
+  const el = document.getElementById('tenancy-overlay');
+  if (!el) return;
+  el.classList.add('show');
+  _renderTenancyClients();
+}
+
+function closeTenancyPanel() {
+  document.getElementById('tenancy-overlay')?.classList.remove('show');
+}
+
+function _renderTenancyClients() {
+  const list = document.getElementById('tenancy-client-list');
+  if (!list) return;
+  const companies = allCompanies();
+  const active = state.currentId;
+  list.innerHTML = companies.map(co => 
+    `<div class="tp-client-item ${co.id === active ? 'active' : ''}" onclick="selectTenancyClient('${co.id}')">
+      ${esc(co.name)}${co.id === active ? ' ← ACTIVE' : ''}
+    </div>`
+  ).join('');
+}
+
+function selectTenancyClient(cid) {
+  selectCompany(cid);
+  closeTenancyPanel();
+}
+
+// Keyboard shortcut: Alt+T opens tenancy panel
+document.addEventListener('keydown', function(e) {
+  try {
+    if (e.altKey && e.key === 't') {
+      e.preventDefault();
+      openTenancyPanel();
+    }
+    if (e.altKey && e.key >= '1' && e.key <= '9') {
+      e.preventDefault();
+      var idx = parseInt(e.key) - 1;
+      var cos = (typeof allCompanies === 'function') ? allCompanies() : [];
+      if (cos[idx] && typeof selectCompany === 'function') selectCompany(cos[idx].id);
+    }
+  } catch(ex) {}
+});
+
+function _renderRiskGauge(crit, high, med, info, total) {
+  const r = 44, stroke = 5, circ = 2 * Math.PI * r;
+  const score = total > 0 ? Math.round((crit * 4 + high * 3 + med * 2 + info) / (total * 4) * 100) : 0;
+  const color = score >= 70 ? '#fb7185' : score >= 40 ? '#fb923c' : score >= 15 ? '#fbbf24' : '#4ade80';
+  const dash = (score / 100) * circ;
+  return `<svg width="120" height="120" viewBox="0 0 120 120" class="risk-gauge">
+    <circle cx="60" cy="60" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="${stroke}"/>
+    <circle cx="60" cy="60" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke+2}"
+      stroke-dasharray="${dash} ${circ - dash}" stroke-linecap="round"
+      transform="rotate(-90 60 60)" style="filter:drop-shadow(0 0 8px ${color}44)"/>
+    <text x="60" y="55" text-anchor="middle" fill="${color}" font-size="22" font-weight="800">${score}</text>
+    <text x="60" y="73" text-anchor="middle" fill="var(--text3)" font-size="9" font-weight="600" letter-spacing="0.08em">RISK SCORE</text>
+  </svg>`;
+}
+
+function renderOverview(co) {
+  const s = co.stats || {};
+  const hosts = co.hosts || [];
+
+  const crit = s.findings_critical || 0;
+  const high = s.findings_high || 0;
+  const med  = s.findings_medium || 0;
+  const info = s.findings_info || 0;
+  const totalFindings = crit + high + med + info;
+  const risk = riskLevel(co);
+  const directHosts = hosts.length - (s.waf_protected || 0);
+
+  document.getElementById("tab-overview").innerHTML = `
+    <div class="overview-hero overview-hero-clean">
+      <div class="ov-hero-left">
+        ${_renderRiskGauge(crit, high, med, info, totalFindings)}
+        <div class="ov-hero-sub">${riskLabel(risk)} · ${co.domains?.[0] || co.name}</div>
+      </div>
+      <div class="ov-hero-right">
+        <div class="ov-hero-metrics">
+          <div class="ov-metric"><span class="ov-metric-num">${s.subdomains || hosts.length || 0}</span><span class="ov-metric-lbl">assets</span></div>
+          <div class="ov-metric"><span class="ov-metric-num">${s.live_hosts || 0}</span><span class="ov-metric-lbl">live hosts</span></div>
+          <div class="ov-metric"><span class="ov-metric-num">${s.open_ports || 0}</span><span class="ov-metric-lbl">open ports</span></div>
+          <div class="ov-metric"><span class="ov-metric-num">${s.waf_protected || 0}</span><span class="ov-metric-lbl">behind WAF</span></div>
+          <div class="ov-metric"><span class="ov-metric-num">${directHosts}</span><span class="ov-metric-lbl" style="color:${directHosts > 0 ? 'var(--red)' : 'var(--text3)'}">direct</span></div>
+        </div>
+        <div class="ov-sev-pills">
+          <span class="ov-sev-pill crit">${crit}<span>critical</span></span>
+          <span class="ov-sev-pill high">${high}<span>high</span></span>
+          <span class="ov-sev-pill med">${med}<span>medium</span></span>
+          <span class="ov-sev-pill info">${info}<span>info</span></span>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function loadScanHistory(cid) {
+  const el = document.getElementById("ov-history");
+  if(!el) return;
+  el.innerHTML = `<span style="color:var(--text3)">Loading…</span>`;
+  try {
+    const r = await fetch(`/api/scan-history/${cid}`, {headers:_authHeaders()});
+    const history = await r.json();
+    if(!history.length){ el.innerHTML = `<span style="color:var(--text3)">No past scans found.</span>`; return; }
+    el.innerHTML = `<div class="history-list">` +
+      history.map(s => {
+        const dt = new Date(s.mtime*1000).toLocaleString();
+        const dnsColor = s.dns_names > 0 ? "var(--teal)" : "var(--text3)";
+        const fColor   = s.findings  > 0 ? "var(--orange)" : "var(--text3)";
+        const safeId   = `sh-${cid}-${esc(s.name)}`.replace(/[^a-zA-Z0-9_-]/g,"_");
+        return `<div id="${safeId}" class="history-row">
+          <span class="history-name">${esc(s.name)}</span>
+          <span class="history-stat">${esc(dt)}</span>
+          <span class="history-stat" style="color:${dnsColor}"><strong>${s.dns_names}</strong> hosts</span>
+          <span class="history-stat" style="color:${fColor}"><strong>${s.findings}</strong> findings</span>
+          <span class="history-stat"><strong>${s.events}</strong> events · ${s.size_kb}KB</span>
+          <div class="history-cta">
+          ${s.has_asm_log ? `<button class="btn btn-secondary" style="font-size:.65rem;padding:2px 8px;color:var(--teal)" onclick="openScanLog('${cid}','${esc(s.name)}')">📋 Ver Log</button>` : ''}
+          <button class="btn btn-secondary" style="font-size:.65rem;padding:2px 8px"
+                  onclick="reparseHistory('${cid}','${esc(s.name)}',this)">Re-parse</button>
+          <button class="btn btn-secondary" style="font-size:.65rem;padding:2px 8px;color:var(--red)"
+                  onclick="deleteScanHistory('${cid}','${esc(s.name)}','${safeId}',this)">Delete</button>
+          </div>
+        </div>`;
+      }).join("") + `</div>`;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
+async function reparseHistory(cid, scanName, btn) {
+  btn.disabled = true;
+  btn.textContent = "Parsing…";
+  try {
+    const r = await fetch(`/api/scan-history/${cid}/${encodeURIComponent(scanName)}/reparse`, {method:"POST", headers:_authHeaders()});
+    if(!r.ok) throw await _apiErr(r);
+    await reloadServerData();
+    const co = allCompanies().find(c=>c.id===cid);
+    if(co){ renderOverview(co); renderFindingsTab(co); renderCveTab(co); renderSubdomainsTab(co); renderTyposquatTab(co); }
+    btn.textContent = "✓ Done";
+    setTimeout(()=>{ btn.textContent="Re-parse"; btn.disabled=false; }, 2000);
+  } catch(e) {
+    btn.textContent = "✗ Error";
+    btn.title = e.message;
+    setTimeout(()=>{ btn.textContent="Re-parse"; btn.disabled=false; }, 3000);
+  }
+}
+
+async function clearReconData(cid) {
+  if (!confirm(`Clear ALL data for "${cid}"?\nThe project will be reset like a fresh project: hosts, findings, URLs, JS, secrets, jobs, logs, checkpoints, screenshots, snapshots and scan history will be removed.\nThe project name/domains/tags are preserved.\nThis action cannot be undone.`)) return;
+  const btn = document.getElementById("clear-data-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Clearing…"; }
+  try {
+    const r = await fetch(`/api/recon/${encodeURIComponent(cid)}/data`, {
+      method: "DELETE", headers: _authHeaders(),
+    });
+    if (!r.ok) throw await _apiErr(r);
+    // Also clear tool logs explicitly
+    try { await fetch(`/api/recon/${cid}/tool-logs`, { method: "DELETE", headers: _authHeaders() }); } catch(e) {}
+    // Force-reload the entire app state from server
+    location.reload();
+  } catch(e) {
+    alert("Error clearing data: " + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = "🗑 Clear Data"; }
+  }
+}
+
+async function deleteScanHistory(cid, scanName, rowId, btn) {
+  if (!confirm(`Delete scan "${scanName}"? This action cannot be undone.`)) return;
+  btn.disabled = true;
+  btn.textContent = "Deleting…";
+  try {
+    const r = await fetch(`/api/scan-history/${encodeURIComponent(cid)}/${encodeURIComponent(scanName)}`, {
+      method: "DELETE", headers: _authHeaders(),
+    });
+    if (!r.ok) throw await _apiErr(r);
+    const row = document.getElementById(rowId);
+    if (row) row.remove();
+    await reloadServerData();
+    const co = allCompanies().find(c => c.id === cid);
+    if (co) { renderOverview(co); renderFindingsTab(co); renderCveTab(co); renderSubdomainsTab(co); }
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = "Delete";
+    alert("Error: " + e.message);
+  }
+}
+
+async function deleteAllScanHistory(cid) {
+  if (!confirm(`Delete ALL scans for "${cid}"? This action cannot be undone.`)) return;
+  const el = document.getElementById("ov-history");
+  if (el) el.innerHTML = `<span style="color:var(--text3)">Deleting…</span>`;
+  try {
+    const r = await fetch(`/api/scan-history/${encodeURIComponent(cid)}`, {
+      method: "DELETE", headers: _authHeaders(),
+    });
+    if (!r.ok) throw await _apiErr(r);
+    const d = await r.json();
+    if (el) el.innerHTML = `<span style="color:var(--text3)">${d.count} scan(s) deleted. Findings cleared.</span>`;
+    await reloadServerData();
+    const co = allCompanies().find(c => c.id === cid);
+    if (co) { renderOverview(co); renderFindingsTab(co); renderCveTab(co); renderSubdomainsTab(co); }
+  } catch(e) {
+    if (el) el.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  FINDINGS / VULNS TAB
+// ════════════════════════════════════════════════════════════════════════
+function _confirmedVulnFindings(findings) {
+  const noise = /phish|typosquat|intel|osint|leak|credential|password|email|brand|whois|monitor|recon|alert|newsletter|exposure|marketing|search|scan noise/i;
+  return (findings || []).filter(f => {
+    const status = String(f.status || "").toLowerCase();
+    const severity = String(f.severity || "").toLowerCase();
+    const text = [
+      f.title,
+      f.name,
+      f.category,
+      f.type,
+      f.module,
+      f.desc,
+      f.description,
+      f.impact,
+      f.endpoint,
+    ].join(" ").toLowerCase();
+    if (noise.test(text)) return false;
+    if (status.includes("confirmed")) return true;
+    return false;
+  });
+}
+
+function _vStatCard(label, val, color) {
+  return '<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 18px;min-width:110px">' +
+    '<div style="font-size:1.45rem;font-weight:800;color:' + color + '">' + val + '</div>' +
+    '<div style="font-size:.68rem;color:var(--text3);margin-top:2px;text-transform:uppercase">' + label + '</div></div>';
+}
+
+function renderFindingsTab(co) {
+  return renderVulnsTab(co);
+}
+
+function _normalizeFindingTitle(title, host) {
+  if (!title) return "?";
+  let t = title;
+  if (host && t.includes(host)) t = t.replace(host, "<HOST>");
+  t = t.replace(/\b\d+\.\d+\.\d+\.\d+\b/g, "<IP>");
+  t = t.replace(/:\d{2,5}\b/g, ":<PORT>");
+  return t;
+}
+
+function applyFindFilter(cid) {
+  const co = allCompanies().find(c=>c.id===cid); if(!co) return;
+  const q       = document.getElementById("f-search")?.value.toLowerCase()||"";
+  const sev     = document.getElementById("f-sev")?.value||"";
+  const cat     = document.getElementById("f-cat")?.value||"";
+  const filtered = _confirmedVulnFindings(co.findings||[]).filter(f=>{
+    const ms = !q||[f.title,f.host,f.desc||f.description,f.category].join(" ").toLowerCase().includes(q);
+    return ms && (!sev||f.severity===sev) && (!cat||f.category===cat);
+  });
+
+  // Group by normalized title
+  const groups = new Map();
+  filtered.forEach(f => {
+    const key = _normalizeFindingTitle(f.title||"", f.host||"");
+    if (!groups.has(key)) groups.set(key, {findings:[]});
+    groups.get(key).findings.push(f);
+  });
+
+  const list  = document.getElementById("f-list");
+  const empty = document.getElementById("f-empty");
+  const cnt   = document.getElementById("f-cnt");
+  if(cnt) cnt.textContent = filtered.length+" findings · "+groups.size+" unique issues";
+  if(!filtered.length){ list.innerHTML=""; empty.style.display="block"; return; }
+  empty.style.display="none";
+
+  // Sort groups: most hosts first, then by highest severity
+  const sevRank = {critical:0, high:1, medium:2, low:3, info:4};
+  const sortedGroups = [...groups.entries()].sort((a,b) => {
+    const maxSevA = Math.min(...a[1].findings.map(f=>sevRank[f.severity]||4));
+    const maxSevB = Math.min(...b[1].findings.map(f=>sevRank[f.severity]||4));
+    if (maxSevA !== maxSevB) return maxSevA - maxSevB;
+    return b[1].findings.length - a[1].findings.length;
+  });
+
+  list.innerHTML = sortedGroups.map(([normTitle, group]) => {
+    const f0 = group.findings[0];
+    const hosts = [...new Set(group.findings.map(f=>f.host||"").filter(Boolean))];
+    const count = group.findings.length;
+    const isMulti = count > 1;
+    const sevs = [...new Set(group.findings.map(f=>f.severity||"info"))];
+    const topSev = sevs.includes("critical") ? "critical" : sevs.includes("high") ? "high" : sevs.includes("medium") ? "medium" : sevs.includes("low") ? "low" : "info";
+    const sevColors = {critical:"#f43f5e", high:"#fb923c", medium:"#fbbf24", low:"var(--blue)", info:"var(--text3)"};
+
+    // Host list preview
+    const hostPreview = hosts.length <= 5
+      ? hosts.map(h=>`<code class="fg-host-chip">${esc(h)}</code>`).join(" ")
+      : hosts.slice(0,5).map(h=>`<code class="fg-host-chip">${esc(h)}</code>`).join(" ") + ` <span style="color:var(--text3);font-size:.68rem">+${hosts.length-5} more</span>`;
+
+    const allHostsId = `fg-hosts-${_hashId(normTitle, "", "")}`;
+
+    return `<div class="fg-row" onclick="toggleFindGroupHosts('${allHostsId}')" style="cursor:pointer">
+      <div class="fg-sev" style="background:${sevColors[topSev]}"></div>
+      <div class="fg-main">
+        <div class="fg-title-row">
+          <span class="fg-title">${esc(f0.title||normTitle)}</span>
+          ${isMulti ? `<span class="fg-badge" style="background:${sevColors[topSev]}22;color:${sevColors[topSev]};border:1px solid ${sevColors[topSev]}44">${count} hosts</span>` : ""}
+          <span style="color:var(--text3);font-size:.68rem;margin-left:4px">${esc(f0.category||"")}</span>
+        </div>
+        <div class="fg-hosts-preview">${hostPreview}</div>
+        <div class="fg-hosts-full" id="${allHostsId}" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(0,0,0,0.2);border:1px solid var(--border2);border-radius:8px">
+          <div style="color:var(--text3);font-size:.65rem;font-weight:600;margin-bottom:6px">📋 All affected hosts (${hosts.length}):</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${hosts.map(h=>`<code class="fg-host-chip fg-host-chip-full" onclick="event.stopPropagation();navigator.clipboard.writeText('${esc(h)}');this.style.background='var(--teal-dim)';setTimeout(()=>this.style.background='',1500)" title="Click to copy">${esc(h)}</code>`).join("")}
+          </div>
+          <div style="margin-top:8px;font-size:.65rem;color:var(--text3)">
+            Click any host to copy · ${esc(f0.desc||"").slice(0,200)}${(f0.desc||"").length>200?"…":""}
+          </div>
+        </div>
+      </div>
+      <div class="fg-arrow" id="${allHostsId}-arr">▾</div>
+    </div>`;
+  }).join("");
+}
+
+function toggleFindGroupHosts(elId) {
+  const el = document.getElementById(elId);
+  const arrow = document.getElementById(elId+"-arr");
+  if (!el) return;
+  const isHidden = el.style.display === "none";
+  el.style.display = isHidden ? "block" : "none";
+  if (arrow) arrow.textContent = isHidden ? "▴" : "▾";
+}
+
+function _hashId() { return [...arguments].join("|").split("").reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0,0).toString(36); }
+
+function exportFindings(cid, fmt) {
+  const co = allCompanies().find(c=>c.id===cid);
+  if(!co) return;
+  const findings = _confirmedVulnFindings(co.findings||[]);
+  const ts = new Date().toISOString().slice(0,10);
+  if(fmt === "json") {
+    _downloadBlob(JSON.stringify(findings, null, 2), `${cid}_findings_${ts}.json`, "application/json");
+  } else {
+    const header = "severity,name,host,url,category,module,description\n";
+    const rows = findings.map(f => [
+      f.severity||"", f.title||f.name||"", f.host||"", f.url||"", f.category||"", f.module||"",
+      (f.desc||f.description||"").replace(/"/g,"'").replace(/\n/g," ")
+    ].map(v=>`"${v}"`).join(",")).join("\n");
+    _downloadBlob(header + rows, `${cid}_findings_${ts}.csv`, "text/csv");
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  CVE TAB
+// ════════════════════════════════════════════════════════════════════════
+let _cveFilter = "", _cveSevFilter = "", _cveProductFilter = "";
+
+var _cveKevOnly = false;
+
+function renderCveTab(co) {
+  window._coForCve = co;
+  const el = document.getElementById("tab-cve");
+  const findings = (co.cve_findings || []).filter(f => f.cve_id && f.severity !== "info");
+  const summary  = co.cve_summary  || {};
+
+  if (!findings.length) {
+    el.innerHTML = `
+      <div class="empty-state"><div class="empty-state-icon">💥</div><div class="empty-state-title">No CVE data yet</div><div class="empty-state-copy">Run the pipeline. The CVE module uses NVD CPE virtualMatchString queries for precise product:version matching, then enriches results with EPSS exploit probability and CISA KEV flags.</div></div>`;
+    return;
+  }
+
+  const products  = [...new Set(findings.map(f => f.product).filter(Boolean))].sort();
+  const kevCount  = summary.kev       || findings.filter(f => f.kev).length;
+  const epssHigh  = summary.epss_high || findings.filter(f => (f.epss||0) >= 0.1).length;
+
+  const summaryBar = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;padding:14px 0 10px;align-items:center">
+      ${_cardKPI({ cls: "c", value: summary.critical||0, label: "Critical" })}
+      ${_cardKPI({ cls: "h", value: summary.high||0, label: "High" })}
+      ${_cardKPI({ cls: "m", value: summary.medium||0, label: "Medium" })}
+      ${_cardKPI({ value: summary.low||0, label: "Low" })}
+      ${_cardKPI({ value: kevCount, label: "KEV", note: "Listed in CISA KEV" })}
+      ${_cardKPI({ value: epssHigh, label: "EPSS≥10%", note: "Exploit probability threshold" })}
+      ${_cardKPI({ value: findings.length, label: "Total" })}
+      <div style="margin-left:auto;font-size:.68rem;color:var(--text3);max-width:320px;line-height:1.5;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.15);border-radius:8px;padding:8px 12px">
+        <b style="color:var(--blue)">Precision matching</b><br>
+        CPE <code>virtualMatchString</code> queries return only CVEs where the exact product:version is in affected configurations — not keyword mentions.
+        Results enriched with <b style="color:#a855f7">EPSS</b> (exploit probability) and <b style="color:#f43f5e">CISA KEV</b> (active exploitation) flags.
+      </div>
+    </div>`;
+
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">CVEs</div>
+          <div class="section-title">Known vulnerabilities matched against detected technologies</div>
+          <div class="section-sub">CPE-precise matching. KEV and EPSS enriched. Sorted by active exploitation risk.</div>
+        </div>
+      </div>
+      ${summaryBar}
+      <div class="filter-bar">
+      <input type="text" class="fi grow" id="cve-search" placeholder="Search CVE ID, product, host, description..."
+             oninput="_cveFilter=this.value;applyCveFilter()">
+      <select class="fi" id="cve-sev" onchange="_cveSevFilter=this.value;applyCveFilter()">
+        <option value="">All severities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+      <select class="fi" id="cve-product" onchange="_cveProductFilter=this.value;applyCveFilter()">
+        <option value="">All products</option>
+        ${products.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join("")}
+      </select>
+      <label style="display:flex;align-items:center;gap:5px;font-size:.7rem;color:var(--text2);white-space:nowrap;cursor:pointer">
+        <input type="checkbox" id="cve-kev-only" onchange="_cveKevOnly=this.checked;applyCveFilter()"> KEV only
+      </label>
+      <span style="font-size:.68rem;color:var(--text3);padding:6px 4px" id="cve-cnt"></span>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px;margin-left:auto"
+              onclick="exportCveCsv()" title="Export CSV">⬇ CSV</button>
+      </div>
+      <div class="table-shell">
+        <div class="table-topline">
+          <div class="table-title">Matched CVEs</div>
+          <div class="table-note">Sorted by active exploitation risk: CISA KEV first, then EPSS × CVSS descending.</div>
+        </div>
+      <table id="cve-table">
+        <thead><tr>
+          <th style="width:100px">Severity</th>
+          <th style="width:150px">CVE ID</th>
+          <th style="width:190px">Product / Version</th>
+          <th style="width:60px;text-align:center">CVSS</th>
+          <th style="width:70px;text-align:center" title="EPSS: probability this CVE will be exploited in the next 30 days (FIRST.org)">EPSS</th>
+          <th>Description</th>
+          <th style="width:180px">Detected On</th>
+          <th style="width:90px">Published</th>
+        </tr></thead>
+        <tbody id="cve-tbody"></tbody>
+      </table>
+      </div>
+    </div>`;
+
+  applyCveFilter();
+}
+
+function _cveSevColor(sev) {
+  switch((sev||"").toLowerCase()) {
+    case "critical": return "#fb7185";
+    case "high":     return "#fb923c";
+    case "medium":   return "#fbbf24";
+    case "low":      return "#4ade80";
+    default:         return "var(--text3)";
+  }
+}
+
+function applyCveFilter() {
+  const co = window._coForCve; if (!co) return;
+  const q    = (_cveFilter||"").toLowerCase();
+  const sev  = _cveSevFilter||"";
+  const prod = _cveProductFilter||"";
+  const kevOnly = !!_cveKevOnly;
+  const findings = (co.cve_findings||[]).filter(f => {
+    if (!f.cve_id || f.severity === "info") return false;
+    if (kevOnly && !f.kev) return false;
+    const hostsStr = (f.affected_hosts||[]).join(" ");
+    const ms = !q || [f.cve_id,f.product,f.desc,hostsStr].join(" ").toLowerCase().includes(q);
+    const ss = !sev  || (f.severity||"").toLowerCase() === sev;
+    const ps = !prod || f.product === prod;
+    return ms && ss && ps;
+  });
+  const cnt = document.getElementById("cve-cnt");
+  if (cnt) cnt.textContent = findings.length + " CVEs";
+  const tbody = document.getElementById("cve-tbody");
+  if (!tbody) return;
+  tbody.innerHTML = findings.map(f => {
+    const sevColor  = _cveSevColor(f.severity);
+    const sevLabel  = (f.severity||"medium").toLowerCase();
+    const score     = f.score != null ? f.score.toFixed(1) : "—";
+    const desc      = (f.desc||"").length > 120 ? esc(f.desc.slice(0,120))+"…" : esc(f.desc||"");
+    const pub       = f.published ? f.published.slice(0,10) : "—";
+    const detVer    = f.detected_version
+      ? `<span style="font-size:.65rem;color:var(--teal);font-family:monospace;display:block">${esc(f.detected_version)}</span>`
+      : `<span style="font-size:.62rem;color:var(--text3);display:block">no version detected</span>`;
+    const kevBadge  = f.kev
+      ? `<span style="display:inline-block;font-size:.55rem;font-weight:700;letter-spacing:.04em;background:rgba(244,63,94,0.18);color:#f43f5e;border:1px solid rgba(244,63,94,0.4);border-radius:3px;padding:1px 5px;margin-left:4px;vertical-align:middle">EXPLOITED</span>`
+      : "";
+    const cveLink   = f.url
+      ? `<a href="${esc(f.url)}" target="_blank" rel="noopener"
+            style="color:var(--teal);font-family:monospace;font-size:.8rem;white-space:nowrap">${esc(f.cve_id)}</a>${kevBadge}`
+      : `<span style="font-family:monospace;font-size:.8rem">${esc(f.cve_id||"")}</span>${kevBadge}`;
+    const epssVal   = (f.epss != null && f.epss > 0)
+      ? f.epss
+      : null;
+    const epssColor = epssVal === null ? "var(--text3)"
+      : epssVal >= 0.5 ? "#f43f5e"
+      : epssVal >= 0.1 ? "#fb923c"
+      : epssVal >= 0.01 ? "#fbbf24"
+      : "var(--text3)";
+    const epssHtml  = epssVal !== null
+      ? `<span style="font-family:monospace;font-size:.78rem;font-weight:600;color:${epssColor}">${(epssVal*100).toFixed(1)}%</span>`
+      : `<span style="font-size:.68rem;color:var(--text3)">—</span>`;
+    const affHosts  = (f.affected_hosts||[]);
+    const hostsHtml = affHosts.length
+      ? affHosts.slice(0,3).map(h=>`<span style="display:block;font-size:.62rem;color:var(--text2);font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px" title="${esc(h)}">${esc(h)}</span>`).join("")
+        + (affHosts.length > 3 ? `<span style="font-size:.6rem;color:var(--text3)">+${affHosts.length-3} more</span>` : "")
+      : `<span style="font-size:.62rem;color:var(--text3)">—</span>`;
+    return `<tr${f.kev ? ' style="background:rgba(244,63,94,0.04)"' : ''}>
+      <td><span class="cc-risk-badge ${sevLabel}">${esc(sevLabel)}</span></td>
+      <td>${cveLink}</td>
+      <td style="font-size:.78rem;color:var(--text2)">${esc(f.product||"")}${detVer}</td>
+      <td style="text-align:center;font-weight:700;font-size:.85rem;color:${sevColor}">${score}</td>
+      <td style="text-align:center">${epssHtml}</td>
+      <td style="font-size:.73rem;color:var(--text3);max-width:340px">${desc}</td>
+      <td>${hostsHtml}</td>
+      <td style="font-size:.72rem;color:var(--text3)">${pub}</td>
+    </tr>`;
+  }).join("");
+  if (!findings.length) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--text3)">No CVEs match the current filters.</td></tr>`;
+  }
+}
+
+function exportCveCsv() {
+  const co = window._coForCve; if (!co) return;
+  const rows = [["CVE ID","Product","Detected Version","Severity","CVSS Score","EPSS %","CISA KEV","Affected Hosts","Published","Description","URL"]];
+  (co.cve_findings||[]).filter(f=>f.cve_id && f.severity!=="info").forEach(f => {
+    rows.push([
+      f.cve_id||"", f.product||"", f.detected_version||"", f.severity||"",
+      f.score!=null?f.score:"",
+      f.epss!=null?(f.epss*100).toFixed(2)+"":"",
+      f.kev?"YES":"",
+      (f.affected_hosts||[]).join("; "),
+      f.published||"", (f.desc||"").replace(/"/g,"'"), f.url||""
+    ]);
+  });
+  const csv = rows.map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  a.download = `${co.id}_cves.csv`;
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SUPPLY CHAIN TAB — JS library CVEs
+// ════════════════════════════════════════════════════════════════════════
+
+function renderSupplyChainTab(co) {
+  const el = document.getElementById("tab-supplychain");
+  const findings = (co.supply_chain_findings || []).filter(f => f.cve_id);
+  const summary  = co.supply_chain_summary || {};
+
+  if (!findings.length) {
+    el.innerHTML = `
+      <div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">No supply chain CVEs yet</div><div class="empty-state-copy">Run the pipeline. The Supply Chain module scans JS libraries detected by whatweb/wappalyzer across all hosts and cross-references each library@version against the NVD database.</div></div>`;
+    return;
+  }
+
+  // Count unique libraries
+  const libsMap = {};
+  findings.forEach(f => {
+    const key = f.library || 'unknown';
+    if (!libsMap[key]) libsMap[key] = { name: key, version: f.version || '?', count: 0, critical: 0 };
+    libsMap[key].count++;
+    if (f.severity === 'critical') libsMap[key].critical++;
+  });
+  const libsList = Object.values(libsMap).sort((a,b) => b.count - a.count);
+
+  const summaryBar = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;padding:14px 0 10px;align-items:center">
+      ${_severityCard("critical", summary.critical||0)}
+      ${_severityCard("high", summary.high||0)}
+      ${_severityCard("medium", summary.medium||0)}
+      ${_severityCard("info", summary.low||0)}
+      <div style="margin-left:auto;font-size:.68rem;color:var(--text3);max-width:340px;line-height:1.5;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.15);border-radius:8px;padding:8px 12px">
+        <b style="color:var(--blue)">How it works</b><br>
+        JS libraries detected via Wappalyzer/WhatWeb across all hosts.
+        Each library@version is queried against the NVD database.
+        Only client-side (JS/frontend) libraries are scanned — server frameworks excluded.
+      </div>
+    </div>`;
+
+  // Detected JS libraries panel (raw, from supply_chain_libs)
+  const rawLibs = co.supply_chain_libs || [];
+  const rawLibsPanel = rawLibs.length ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:.68rem;color:var(--text3);margin-bottom:7px;text-transform:uppercase;letter-spacing:.06em">Bibliotecas JS detectadas (${rawLibs.length})</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${rawLibs.map(l => {
+          const at = l.lastIndexOf('@');
+          const name = at > 0 ? l.slice(0, at) : l;
+          const ver  = at > 0 ? l.slice(at+1) : '';
+          return `<span style="background:var(--card);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:.7rem;font-family:var(--mono)"><b style="color:var(--text)">${esc(name)}</b>${ver?`<span style="color:var(--text3)">@${esc(ver)}</span>`:''}</span>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
+  // Libraries panel (CVE-linked)
+  const libsPanel = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      ${libsList.map(l => `
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:.72rem">
+          <b style="color:var(--text)">${esc(l.name)}</b>
+          <span style="color:var(--text3)">${esc(l.version)}</span>
+          <span style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--text2)">${l.count} CVEs</span>
+          ${l.critical > 0 ? '<span style="color:#ef4444;font-weight:700">' + l.critical + ' crit</span>' : ''}
+        </div>
+      `).join("")}
+    </div>`;
+
+  // Table of CVEs
+  const sevColors = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6' };
+  const rows = findings.map(f => `
+    <tr>
+      <td style="white-space:nowrap"><a href="${esc(f.url||'#')}" target="_blank" rel="noopener" style="color:${sevColors[f.severity]||'#6b7280'};font-weight:600;font-size:.75rem">${esc(f.cve_id||'')}</a></td>
+      <td><span style="font-size:.7rem;font-weight:600;color:var(--text)">${esc(f.library||'')}</span> <span style="font-size:.65rem;color:var(--text3)">${esc(f.version||'')}</span></td>
+      <td style="text-align:center"><span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.65rem;font-weight:700;background:rgba(${f.severity==='critical'?'244,63,94':f.severity==='high'?'251,146,60':f.severity==='medium'?'251,191,36':'59,130,246'},0.12);color:${sevColors[f.severity]||'#6b7280'}">${(f.score||'').toString()}</span></td>
+      <td style="font-size:.68rem;color:var(--text2);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc((f.desc||'').substring(0,150))}</td>
+      <td style="font-size:.65rem;color:var(--text3)">${esc(f.published||'')}</td>
+      <td style="font-size:.65rem;color:var(--text3)">${esc((f.affected_hosts||[]).slice(0,3).join(', '))}</td>
+    </tr>`).join("");
+
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Supply Chain</div>
+          <div class="section-title">Client-side JS library vulnerabilities from the NVD</div>
+          <div class="section-sub">These CVEs affect JavaScript/frontend libraries detected on your assets. Each finding is linked to the library version running on specific hosts.</div>
+        </div>
+      </div>
+      ${summaryBar}
+      ${rawLibsPanel}
+      ${libsPanel}
+      <div class="tbl-wrap">
+        <table class="tbl tbd-striped">
+          <thead>
+            <tr>
+              <th style="width:140px">CVE</th>
+              <th style="width:170px">Library</th>
+              <th style="width:60px;text-align:center">Score</th>
+              <th>Description</th>
+              <th style="width:80px">Published</th>
+              <th style="width:160px">Hosts</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HOSTS TAB
+// ════════════════════════════════════════════════════════════════════════
+let _co_hosts = [], _hosts_page = 1, _hosts_sort = "host", _hosts_asc = true;
+const HPP = 30;
+
+function renderHostsTab(co) {
+  document.getElementById("tab-hosts").innerHTML = `
+    <div id="playwright-host-inventory" style="margin-bottom:12px"></div>
+    <div class="filter-bar">
+      <input type="text" class="fi grow" id="h-search" placeholder="Search host, IP, technology..." oninput="applyHostFilter()">
+      <select class="fi" id="h-waf" onchange="applyHostFilter()">
+        <option value="">All WAF/CDN</option>
+        <option value="Imperva">Imperva</option>
+        <option value="Cloudflare">Cloudflare</option>
+        <option value="AWS">AWS CloudFront</option>
+        <option value="Google">Google Cloud</option>
+        <option value="Direct">Direct (no WAF)</option>
+        <option value="Firewalled">Direct (Firewall)</option>
+      </select>
+      <select class="fi" id="h-status" onchange="applyHostFilter()">
+        <option value="">All hosts</option>
+        <option value="active">With open ports</option>
+        <option value="inactive">No ports mapped</option>
+      </select>
+      <span style="font-size:.68rem;color:var(--text3);padding:6px 4px;" id="h-cnt"></span>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px;margin-left:auto"
+              onclick="exportHosts('csv')" title="Export CSV">⬇ CSV</button>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px"
+              onclick="exportHosts('json')" title="Export JSON">⬇ JSON</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr>
+          <th onclick="sortHosts('host')">Host ↕</th>
+          <th onclick="sortHosts('ip')">IP Address ↕</th>
+          <th>Title</th>
+          <th>WAF / CDN</th>
+          <th>Technologies</th>
+          <th>Open Ports</th>
+          <th style="width:66px">Shot</th>
+        </tr></thead>
+        <tbody id="h-tbody"></tbody>
+      </table>
+      <div class="pager">
+        <span class="pager-info" id="h-pinfo"></span>
+        <div class="pager-btns">
+          <button class="pb" id="h-prev" onclick="hostsPageNav(-1)">← Prev</button>
+          <span id="h-pnums"></span>
+          <button class="pb" id="h-next" onclick="hostsPageNav(1)">Next →</button>
+        </div>
+      </div>
+    </div>`;
+  _co_hosts = [...(co.hosts||[])];
+  _hosts_page = 1;
+  applyHostFilter();
+  renderPlaywrightHostInventoryTab(co);
+}
+
+async function renderPlaywrightHostInventoryTab(co) {
+  const mount = document.getElementById("playwright-host-inventory");
+  if (!mount || !co?.id) return;
+  mount.innerHTML = `
+    <div class="job-detail-card">
+      <div class="job-detail-title">Playwright Host Inventory</div>
+      <div class="job-detail-copy">Loading browser-discovered hosts...</div>
+    </div>
+  `;
+  try {
+    const r = await fetch(`/api/jobs?company_id=${encodeURIComponent(co.id)}&limit=20`, {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const jobs = await r.json();
+    const job = (jobs || []).find(j => j.job_type === "playwright_recon");
+    if (!job) {
+      mount.innerHTML = `
+        <div class="job-detail-card">
+          <div class="job-detail-title">Playwright Host Inventory</div>
+          <div class="job-detail-copy">No Playwright run found for this company yet.</div>
+        </div>
+      `;
+      return;
+    }
+    const sessionResp = await fetch(_jobArtifactUrl(job.id, "session"), {headers:_authHeaders()});
+    if (!sessionResp.ok) {
+      mount.innerHTML = `
+        <div class="job-detail-card">
+          <div class="job-detail-title">Playwright Host Inventory</div>
+          <div class="job-detail-copy">Host inventory not available yet.</div>
+        </div>
+      `;
+      return;
+    }
+    const session = await sessionResp.json();
+    mount.innerHTML = `
+      <div class="job-detail-card">
+        <div class="job-detail-head">
+          <div>
+            <div class="job-detail-title">Playwright Host Inventory</div>
+            <div class="job-detail-copy">${esc(job.id)} · ${esc(job.status || "—")} · ${esc(job.created_at || "—")}</div>
+          </div>
+          <div class="job-actions">
+            <button class="btn btn-secondary btn-icon" onclick="openJobDetail(${_jsArg(job.id)})">Details</button>
+            ${job.status === "done" ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Session</a>` : ""}
+          </div>
+        </div>
+        ${_playwrightInventorySummary(session)}
+      </div>
+    `;
+  } catch(e) {
+    mount.innerHTML = `
+      <div class="job-detail-card">
+        <div class="job-detail-title">Playwright Host Inventory</div>
+        <div class="job-detail-copy">Failed to load host inventory: ${esc(e.message)}</div>
+      </div>
+    `;
+  }
+}
+
+function applyHostFilter() {
+  const q  = document.getElementById("h-search")?.value.toLowerCase()||"";
+  const wf = document.getElementById("h-waf")?.value||"";
+  const st = document.getElementById("h-status")?.value||"";
+  const filtered = _co_hosts.filter(h=>{
+    const ms = !q || h.host.includes(q)||h.ip.includes(q)||h.technologies.join(",").toLowerCase().includes(q);
+    return ms && (!wf||h.waf.includes(wf)) &&
+      (!st||(st==="active"&&h.ports.length>0)||(st==="inactive"&&h.ports.length===0));
+  });
+  _hosts_page = 1;
+  renderHostsTable(filtered);
+}
+
+function sortHosts(key) {
+  if(_hosts_sort===key) _hosts_asc=!_hosts_asc; else {_hosts_sort=key;_hosts_asc=true;}
+  _co_hosts.sort((a,b)=>{ const av=(a[key]||"").toLowerCase(),bv=(b[key]||"").toLowerCase(); return _hosts_asc?av.localeCompare(bv):bv.localeCompare(av); });
+  applyHostFilter();
+}
+
+function hostsPageNav(d) {
+  const q=document.getElementById("h-search")?.value.toLowerCase()||"";
+  const wf=document.getElementById("h-waf")?.value||"";
+  const st=document.getElementById("h-status")?.value||"";
+  const filtered=_co_hosts.filter(h=>{
+    const ms=!q||h.host.includes(q)||h.ip.includes(q);
+    return ms&&(!wf||h.waf.includes(wf))&&(!st||(st==="active"&&h.ports.length>0)||(st==="inactive"&&h.ports.length===0));
+  });
+  const totPg=Math.ceil(filtered.length/HPP);
+  _hosts_page=Math.max(1,Math.min(totPg,_hosts_page+d));
+  renderHostsTable(filtered);
+}
+
+function hostsGoPage(p) { _hosts_page=p; hostsPageNav(0); }
+
+function renderHostsTable(filtered) {
+  const tot=filtered.length, totPg=Math.ceil(tot/HPP);
+  const st=(_hosts_page-1)*HPP, pg=filtered.slice(st,st+HPP);
+  const cnt=document.getElementById("h-cnt"); if(cnt) cnt.textContent=tot+" hosts";
+  const pi=document.getElementById("h-pinfo"); if(pi) pi.textContent=`${st+1}–${Math.min(st+HPP,tot)} of ${tot}`;
+  const pr=document.getElementById("h-prev"); if(pr) pr.disabled=_hosts_page<=1;
+  const nx=document.getElementById("h-next"); if(nx) nx.disabled=_hosts_page>=totPg;
+  let pn="";
+  for(let i=Math.max(1,_hosts_page-2);i<=Math.min(totPg,_hosts_page+2);i++)
+    pn+=`<button class="pb${i===_hosts_page?" active":""}" onclick="hostsGoPage(${i})">${i}</button>`;
+  const pne=document.getElementById("h-pnums"); if(pne) pne.innerHTML=pn;
+  const tb=document.getElementById("h-tbody"); if(!tb) return;
+  tb.innerHTML = pg.map(h=>_hostTableRow(h)).join("");
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  PORTS TAB
+// ════════════════════════════════════════════════════════════════════════
+let _co_ports = [], _ports_page = 1;
+const PPP = 25;
+
+function renderPortsTab(co) {
+  const ps = co.port_scan || {};
+  const highRiskRows = _filteredHighRiskPorts(ps.high_risk || []);
+  const scanSummary = (ps.tool || ps.ips_scanned) ? (() => {
+    const tool      = ps.tool || "nmap";
+    const scanned   = ps.ips_scanned || 0;
+    const skipped   = ps.waf_ips_skipped || 0;
+    const highRisk  = highRiskRows.length;
+    const scanDate  = ps.scanned_at ? ps.scanned_at.replace("T"," ").slice(0,16) : "";
+    return `
+      <div class="jobs-summary" style="margin-bottom:12px">
+        ${_portSummaryCard("Tool", tool)}
+        ${_portSummaryCard("IPs scanned", scanned)}
+        ${skipped ? _portSummaryCard("WAF IPs skipped", skipped, "") : ""}
+        ${highRisk ? _portSummaryCard("High-risk ports", highRisk, "error") : ""}
+        ${scanDate ? `<div class="job-kpi" style="grid-column:1/-1"><div class="job-kpi-label">Scanned</div><div class="job-detail-v" style="margin-top:4px">${esc(scanDate)}</div></div>` : ""}
+      </div>`;
+  })() : "";
+
+  const highRiskPanel = highRiskRows.length ? (() => {
+    const rows = highRiskRows.map(h => _portRiskRow(h)).join('');
+    return `<div style="background:rgba(244,63,94,0.05);border:1px solid rgba(244,63,94,0.25);border-radius:7px;margin-bottom:12px;overflow:hidden">
+      <div style="padding:8px 12px;font-size:.72rem;font-weight:700;color:#f43f5e;border-bottom:1px solid rgba(244,63,94,0.2)">⚠ Portas de Alto Risco (${highRiskRows.length})</div>
+      ${rows}
+    </div>`;
+  })() : "";
+
+  document.getElementById("tab-ports").innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Ports</div>
+          <div class="section-title">Open service exposure by host</div>
+          <div class="section-sub">Use this view to spot concentration of exposed services and quickly pivot by host, IP or common ports.</div>
+        </div>
+      </div>
+      ${scanSummary}
+      ${highRiskPanel}
+      <div class="filter-bar">
+      <input type="text" class="fi grow" id="p-search" placeholder="Search host or IP..." oninput="applyPortFilter()">
+      <select class="fi" id="p-port" onchange="applyPortFilter()">
+        <option value="">All ports</option>
+        <option value="80">80 (HTTP)</option>
+        <option value="443">443 (HTTPS)</option>
+        <option value="8080">8080</option>
+        <option value="8443">8443</option>
+        <option value="3000">3000</option>
+        <option value="5000">5000</option>
+        <option value="9000">9000</option>
+      </select>
+      <span style="font-size:.68rem;color:var(--text3);padding:6px 4px;" id="p-cnt"></span>
+      </div>
+      <div class="table-shell">
+        <div class="table-topline">
+          <div class="table-title">Hosts with exposed ports</div>
+          <div class="table-note">Sorted visually by host row; count column highlights concentration.</div>
+        </div>
+      <table>
+        <thead><tr><th>Host</th><th>IP Address</th><th>WAF / CDN</th><th>Open Ports</th><th>#</th><th style="width:40px"></th></tr></thead>
+        <tbody id="p-tbody"></tbody>
+      </table>
+      <div class="pager">
+        <span class="pager-info" id="p-pinfo"></span>
+        <div class="pager-btns">
+          <button class="pb" onclick="portsPageNav(-1)">← Prev</button>
+          <span id="p-pnums"></span>
+          <button class="pb" onclick="portsPageNav(1)">Next →</button>
+        </div>
+      </div>
+      </div>
+    </div>`;
+  _co_ports = (co.hosts||[]).filter(h=>h.ports.length>0);
+  _ports_page = 1;
+  applyPortFilter();
+}
+
+function applyPortFilter() {
+  const q  = document.getElementById("p-search")?.value.toLowerCase()||"";
+  const pt = document.getElementById("p-port")?.value||"";
+  const filtered = _co_ports.filter(h=>{
+    return (!q||h.host.includes(q)||h.ip.includes(q)) && (!pt||h.ports.includes(pt));
+  });
+  _ports_page = 1;
+  renderPortsTable(filtered);
+}
+
+function portsPageNav(d) {
+  const q=document.getElementById("p-search")?.value.toLowerCase()||"";
+  const pt=document.getElementById("p-port")?.value||"";
+  const filtered=_co_ports.filter(h=>(!q||h.host.includes(q)||h.ip.includes(q))&&(!pt||h.ports.includes(pt)));
+  const totPg=Math.ceil(filtered.length/PPP);
+  _ports_page=Math.max(1,Math.min(totPg,_ports_page+d));
+  renderPortsTable(filtered);
+}
+
+function portsGoPage(p){_ports_page=p;portsPageNav(0);}
+
+function renderPortsTable(filtered) {
+  const tot=filtered.length, totPg=Math.ceil(tot/PPP);
+  const st=(_ports_page-1)*PPP, pg=filtered.slice(st,st+PPP);
+  const cnt=document.getElementById("p-cnt"); if(cnt) cnt.textContent=tot+" hosts";
+  const pi=document.getElementById("p-pinfo"); if(pi) pi.textContent=`${st+1}–${Math.min(st+PPP,tot)} of ${tot}`;
+  let pn="";
+  for(let i=Math.max(1,_ports_page-2);i<=Math.min(totPg,_ports_page+2);i++)
+    pn+=`<button class="pb${i===_ports_page?" active":""}" onclick="portsGoPage(${i})">${i}</button>`;
+  const pne=document.getElementById("p-pnums"); if(pne) pne.innerHTML=pn;
+  const tb=document.getElementById("p-tbody"); if(!tb) return;
+  tb.innerHTML=pg.map(h=>{
+    const portDetails = h.port_details || [];
+    const portMap = Object.fromEntries(portDetails.map(pd => [pd.port, pd]));
+    const cloudLabel = h.cloud_provider ? ` <span class="waf-t" style="background:rgba(96,165,250,0.1);color:#60a5fa;border:1px solid rgba(96,165,250,0.2)">☁ ${esc(h.cloud_provider)}</span>` : '';
+    return `
+    <tr class="clickable-host" onclick="openHostDrawer('${escAttr(h.host)}')">
+      <td>
+        <div class="host-cell">
+          <a class="host-main" href="https://${h.host}" target="_blank">${esc(h.host)}</a>
+          <span class="host-sub">${(h.title && esc(h.title)) || "Primary exposed host"}</span>
+        </div>
+      </td>
+      <td><span class="ip-t">${esc(h.ip)}</span></td>
+      <td><span class="waf-t ${wafClass(h.waf)}">${esc(h.waf)}</span>${cloudLabel}</td>
+      <td><div class="badge-row">${h.ports.map(p=>{
+        if (portMap[p]) return `<span class="port-c" title="${esc(portMap[p].category||'')}">${esc(p)}:${esc(portMap[p].service||'')}</span>`;
+        return `<span class="port-c">${esc(p)}</span>`;
+      }).join("")}</div></td>
+      <td><span class="muted-kpi">${h.ports.length}</span></td>
+      <td><button class="url-copy-btn" onclick="copyToClipboard('${escAttr(h.host)}');event.stopPropagation()" title="Copy hostname" style="font-size:.6rem;padding:2px 5px">📋</button></td>
+    </tr>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SUBDOMAINS TAB
+// ════════════════════════════════════════════════════════════════════════
+const ADMIN_PORT_LABELS = {
+  "21":"FTP","22":"SSH","23":"Telnet","25":"SMTP","3306":"MySQL","5432":"PG",
+  "6379":"Redis","27017":"Mongo","9200":"ES","2082":"cPanel","2083":"cPanel SSL",
+  "2086":"WHM","2087":"WHM SSL","2095":"Webmail","2096":"Webmail SSL",
+  "8080":"HTTP Alt","8443":"HTTPS Alt","8880":"HTTP Alt",
+};
+const WEB_PORTS = new Set(["80", "443", "8000", "8008", "8080", "8081", "8088", "8443", "8880"]);
+const HIGH_RISK_PORT_LABELS = {
+  "21":"FTP — plaintext file transfer",
+  "22":"SSH",
+  "23":"Telnet — plaintext shell",
+  "25":"SMTP",
+  "110":"POP3 — plaintext email",
+  "143":"IMAP — plaintext email",
+  "3306":"MySQL",
+  "5432":"PostgreSQL",
+  "6379":"Redis",
+  "27017":"MongoDB",
+  "9200":"Elasticsearch",
+  "2082":"cPanel",
+  "2083":"cPanel SSL",
+  "2086":"WHM",
+  "2087":"WHM SSL",
+  "2095":"Webmail",
+  "2096":"Webmail SSL",
+};
+
+let _sub_hosts = [], _sub_page = 1;
+const SUB_PER_PAGE = 50;
+
+// Domains tab: cap how many domain cards render at once. Companies can have
+// tens of thousands of scope domains; rendering one card each froze the UI.
+const DOM_CARD_LIMIT = 50;
+let _domBuckets = [], _domQuery = "";
+
+function _normalizeScopeDomain(raw) {
+  return String(raw || "")
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/.*$/, "")
+    .replace(/^\*\./, "")
+    .replace(/\.$/, "")
+    .toLowerCase();
+}
+
+function _buildSubdomainInventory(co, rows = []) {
+  const merged = new Map();
+  const techByHost = new Map();
+  Object.entries(co.tech_index || {}).forEach(([tech, hosts]) => {
+    (hosts || []).forEach(h => {
+      const host = _normalizeScopeDomain(h);
+      if (!host) return;
+      if (!techByHost.has(host)) techByHost.set(host, new Set());
+      techByHost.get(host).add(tech);
+    });
+  });
+
+  const addHost = (item, source = "") => {
+    if (!item) return;
+    const host = _normalizeScopeDomain(item.host || item.subdomain || item.domain || "");
+    if (!host) return;
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return;
+    const existing = merged.get(host) || {
+      host,
+      ip: item.ip || "",
+      status_code: item.status_code,
+      content_length: item.content_length,
+      ports: Array.isArray(item.ports) ? item.ports.slice() : [],
+      port_details: Array.isArray(item.port_details) ? item.port_details.slice() : [],
+      waf: item.waf || "Direct",
+      cloud_provider: item.cloud_provider || "",
+      cert_info: item.cert_info || null,
+      technologies: Array.isArray(item.technologies) ? item.technologies.slice() : [],
+      title: item.title || "",
+      screenshot: item.screenshot || "",
+      risk: item.risk || item.risk_level || item.severity || "",
+      sources: [],
+    };
+    if (!existing.ip && item.ip) existing.ip = item.ip;
+    if (existing.status_code == null && item.status_code != null) existing.status_code = item.status_code;
+    if (existing.content_length == null && item.content_length != null) existing.content_length = item.content_length;
+    if (Array.isArray(item.ports)) {
+      item.ports.forEach(p => { if (!existing.ports.includes(p)) existing.ports.push(p); });
+    }
+    if (Array.isArray(item.port_details)) {
+      existing.port_details = existing.port_details || [];
+      item.port_details.forEach(p => {
+        const port = String(p.port || p || "");
+        if (port && !existing.port_details.some(x => String(x.port || x || "") === port)) existing.port_details.push(p);
+      });
+    }
+    if (Array.isArray(item.technologies)) {
+      item.technologies.forEach(t => { if (!existing.technologies.includes(t)) existing.technologies.push(t); });
+    }
+    const techSet = techByHost.get(host);
+    if (techSet) {
+      techSet.forEach(t => { if (!existing.technologies.includes(t)) existing.technologies.push(t); });
+    }
+    if (!existing.title && item.title) existing.title = item.title;
+    if (!existing.risk && (item.risk || item.risk_level || item.severity)) existing.risk = item.risk || item.risk_level || item.severity;
+    if (!existing.waf && item.waf) existing.waf = item.waf;
+    if (!existing.cloud_provider && item.cloud_provider) existing.cloud_provider = item.cloud_provider;
+    if (!existing.cert_info && item.cert_info) existing.cert_info = item.cert_info;
+    if (!existing.screenshot && item.screenshot) existing.screenshot = item.screenshot;
+    if (source && !existing.sources.includes(source)) existing.sources.push(source);
+    merged.set(host, existing);
+  };
+
+  (co.hosts || []).forEach(h => addHost(h, h.status_code != null ? "validated" : "host"));
+  (co.ct_subdomains || []).forEach(s => addHost(typeof s === "string" ? {host: s} : s, "ct"));
+  (rows || []).forEach(s => addHost({host: s.subdomain, status_code: s.is_alive ? 200 : null}, s.source || "history"));
+
+  return Array.from(merged.values()).sort((a, b) => a.host.localeCompare(b.host));
+}
+
+function _matchDomainForHost(host, domains, domainSet) {
+  const h = _normalizeScopeDomain(host);
+  if (!h) return "";
+  // Fast path: O(labels) suffix lookup against a Set instead of scanning/sorting
+  // every scope domain per host (companies can have tens of thousands of domains).
+  if (domainSet) {
+    if (domainSet.has(h)) return h;
+    const parts = h.split(".");
+    for (let i = 1; i < parts.length; i++) {     // most specific (longest) suffix first
+      const cand = parts.slice(i).join(".");
+      if (domainSet.has(cand)) return cand;
+    }
+    return "";
+  }
+  const ordered = [...domains].sort((a, b) => b.length - a.length);
+  for (const domain of ordered) {
+    if (h === domain || h.endsWith("." + domain)) return domain;
+  }
+  return "";
+}
+
+function _loadSubdomainHistory(co) {
+  if (!co) return Promise.resolve([]);
+  if (Array.isArray(co.subdomain_history)) return Promise.resolve(co.subdomain_history);
+  if (co._subhistoryPromise) return co._subhistoryPromise;
+  co._subhistoryPromise = fetch(`/api/data/${co.id}/subhistory`, {headers: _authHeaders()})
+    .then(r => r.ok ? r.json() : Promise.reject(r))
+    .then(data => Array.isArray(data.history) ? data.history : [])
+    .catch(() => []);
+  return co._subhistoryPromise;
+}
+
+function _isActiveHost(h) {
+  const sc = Number(h && h.status_code);
+  return Number.isFinite(sc) && sc > 0;
+}
+
+function _isHighRiskPort(port, service = "") {
+  const p = String(port || "").trim();
+  if (!p || WEB_PORTS.has(p)) return false;
+  if (HIGH_RISK_PORT_LABELS[p]) return true;
+  return /ssh|ftp|telnet|mysql|postgres|redis|mongo|elastic|imap|pop3|smtp|cpanel|whm|webmail/i.test(String(service || ""));
+}
+
+function _portServiceLabel(port, service = "") {
+  const p = String(port || "").trim();
+  if (HIGH_RISK_PORT_LABELS[p]) return HIGH_RISK_PORT_LABELS[p];
+  if (service) return service;
+  if (ADMIN_PORT_LABELS[p]) return ADMIN_PORT_LABELS[p];
+  if (p === "80") return "HTTP";
+  if (p === "443") return "HTTPS";
+  return "";
+}
+
+function _hostOpenPorts(h) {
+  const raw = Array.isArray(h?.ports) ? h.ports : [];
+  const details = Array.isArray(h?.port_details) ? h.port_details : [];
+  const byPort = new Map();
+  raw.forEach(p => {
+    const port = String(p || "").trim();
+    if (port) byPort.set(port, {port, service: _portServiceLabel(port)});
+  });
+  details.forEach(item => {
+    const port = String(item?.port || item || "").trim();
+    if (!port) return;
+    byPort.set(port, {
+      port,
+      service: _portServiceLabel(port, item?.service || item?.name || ""),
+      category: item?.category || "",
+    });
+  });
+  return [...byPort.values()].sort((a, b) => Number(a.port) - Number(b.port));
+}
+
+function _fmtHostPorts(h) {
+  const ports = _hostOpenPorts(h);
+  if (!ports.length) return `<span class="ai-dash">—</span>`;
+  const shown = ports.slice(0, 4).map(p => {
+    const label = p.service ? `${p.port}:${p.service}` : p.port;
+    const risky = _isHighRiskPort(p.port, p.service);
+    const title = p.category || p.service || "";
+    return `<span class="ai-port ${risky ? "risk" : ""}" title="${escAttr(title)}">${esc(label)}</span>`;
+  }).join("");
+  const overflow = ports.length > 4 ? `<span class="ai-port more">+${ports.length - 4}</span>` : "";
+  return `<div class="ai-port-row">${shown}${overflow}</div>`;
+}
+
+function _findingHosts(co) {
+  const map = new Map();
+  const sevRank = {critical: 4, high: 3, medium: 2, low: 1, info: 0};
+  const add = (host, finding) => {
+    const h = _normalizeScopeDomain(host);
+    if (!h) return;
+    const sev = String(finding.severity || "info").toLowerCase();
+    const prev = map.get(h);
+    if (!prev || (sevRank[sev] || 0) > (sevRank[prev.severity] || 0)) {
+      map.set(h, {severity: sev, title: finding.title || finding.category || "Finding"});
+    }
+  };
+  (co?.findings || []).forEach(f => {
+    add(f.host, f);
+    add(f.domain, f);
+    try {
+      if (f.url) add(new URL(f.url).hostname, f);
+    } catch(e) {}
+  });
+  return map;
+}
+
+function _hostRiskInfo(h, riskMap) {
+  const direct = String(h?.risk || h?.risk_level || h?.severity || "").toLowerCase();
+  if (["critical", "high", "medium"].includes(direct)) return {risk: true, severity: direct, label: direct};
+  const finding = riskMap && riskMap.get(h.host);
+  if (finding && ["critical", "high", "medium"].includes(finding.severity)) {
+    return {risk: true, severity: finding.severity, label: finding.title || finding.severity};
+  }
+  const sc = Number(h?.status_code || 0);
+  if (sc >= 500) return {risk: true, severity: "high", label: "5xx"};
+  const sensitivePort = _hostOpenPorts(h).find(p => _isHighRiskPort(p.port, p.service));
+  if (sensitivePort) return {risk: true, severity: "high", label: _portServiceLabel(sensitivePort.port, sensitivePort.service) || `Port ${sensitivePort.port}`};
+  return {risk: false, severity: "", label: ""};
+}
+
+function _renderSubInventoryShell(co, inventory, el) {
+  const activeInventory = (inventory || []).filter(_isActiveHost);
+  const riskMap = _findingHosts(co);
+  activeInventory.forEach(h => { h._risk = _hostRiskInfo(h, riskMap); });
+  _sub_hosts = activeInventory;
+  _sub_page = 1;
+  const tc = document.getElementById("tc-subdomains");
+  if (tc) tc.textContent = _sub_hosts.length || 0;
+
+  if(!_sub_hosts.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◎</div><div class="empty-state-title">Nenhum host ativo encontrado</div><div class="empty-state-copy">A tabela de Hosts mostra somente dominios/subdominios com status HTTP real. Rode um scan para validar os ativos.</div></div>`;
+    return;
+  }
+
+    const checkpointInfo = co.checkpoint_diff || null;
+    const newSubs = Array.isArray(checkpointInfo?.new_subdomains) ? checkpointInfo.new_subdomains : [];
+    const newSubsHtml = newSubs.length
+      ? newSubs.slice(0, 12).map(s => `<code class="fg-host-chip fg-host-chip-full" title="New since ${esc(checkpointInfo?.compared_to || 'previous scan')}">${esc(s)}</code>`).join("")
+      : "";
+    const hostSelector = `
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <button class="btn ${state.hostPanel === 'domains' ? 'btn-primary' : 'btn-secondary'}" style="font-size:.68rem;padding:4px 10px" onclick="switchHostsPanel('domains')">Domains</button>
+        <button class="btn ${state.hostPanel === 'subdomains' ? 'btn-primary' : 'btn-secondary'}" style="font-size:.68rem;padding:4px 10px" onclick="switchHostsPanel('subdomains')">Hosts</button>
+        <span style="font-size:.68rem;color:var(--text3)">Current view: ${state.hostPanel === 'subdomains' ? 'Hosts' : 'Domains'}</span>
+      </div>`;
+
+    const statBadges = _assetStatusSummary(activeInventory);
+    const techCounts = {};
+    activeInventory.forEach(h => _hostTechLabels(h).forEach(t => { techCounts[t] = (techCounts[t] || 0) + 1; }));
+    const techOptions = Object.keys(techCounts).sort((a, b) => techCounts[b] - techCounts[a]).slice(0, 40)
+      .map(t => `<option value="${escAttr(t)}">${esc(t)} (${techCounts[t]})</option>`).join("");
+    const portCounts = {};
+    activeInventory.forEach(h => _hostOpenPorts(h).forEach(p => { portCounts[p.port] = (portCounts[p.port] || 0) + 1; }));
+    const portOptions = Object.keys(portCounts).sort((a,b)=>Number(a)-Number(b))
+      .map(p => `<option value="${escAttr(p)}">${esc(p)}${ADMIN_PORT_LABELS[p] ? " · " + esc(ADMIN_PORT_LABELS[p]) : ""} (${portCounts[p]})</option>`).join("");
+    const newHostsBanner = (checkpointInfo && checkpointInfo.new_subdomains_count > 0) ? `
+      <div class="ai-newbanner">
+        <span class="ai-newbanner-t">⚡ ${checkpointInfo.new_subdomains_count} new since last scan</span>
+        <span class="ai-newbanner-s">compared to ${(checkpointInfo.compared_to||'').slice(0,19)}</span>
+        ${newSubsHtml ? `<div class="ai-newbanner-chips">${newSubsHtml}</div>` : ""}
+      </div>` : "";
+
+    el.innerHTML = `
+    ${hostSelector}
+    <div class="ai-shell">
+      <div class="ai-head">
+        <div class="ai-head-l">
+          <div class="ai-title">Assets Inventory</div>
+          <div class="ai-sub"><span id="sub-cnt">${activeInventory.length}</span> ativos validados · sem n/a</div>
+        </div>
+        <div class="ai-head-r">
+          ${statBadges}
+          <button class="ai-refresh" onclick="switchHostsPanel('subdomains')" title="Refresh"><span style="font-size:.85rem">⟳</span> Refresh</button>
+          <button class="ai-icon-btn" onclick="exportHosts('csv')" title="Export CSV">CSV</button>
+          <button class="ai-icon-btn" onclick="exportHosts('json')" title="Export JSON">JSON</button>
+        </div>
+      </div>
+      ${newHostsBanner}
+      <div class="ai-filter">
+        <div class="ai-search">
+          <span class="ai-search-ic">⌕</span>
+          <input id="sub-search" placeholder="Buscar dominio, subdominio, titulo, IP ou porta..." oninput="_subApplyFilter()">
+        </div>
+        <select class="ai-drop" id="sub-status" onchange="_subApplyFilter()">
+          <option value=""># Status HTTP</option>
+          <option value="2">2xx — OK</option>
+          <option value="3">3xx — Redirect</option>
+          <option value="4">4xx — Bloqueado/cliente</option>
+          <option value="5">5xx — Erro/risco</option>
+        </select>
+        <select class="ai-drop" id="sub-tech" onchange="_subApplyFilter()">
+          <option value="">⊞ Tech / Infra</option>
+          ${techOptions}
+        </select>
+        <select class="ai-drop" id="sub-port" onchange="_subApplyFilter()">
+          <option value="">⛓ Portas abertas</option>
+          ${portOptions}
+        </select>
+        <select class="ai-drop" id="sub-risk" onchange="_subApplyFilter()">
+          <option value="">◇ Risco</option>
+          <option value="risk">Com risco</option>
+          <option value="clean">Sem risco</option>
+        </select>
+        <select class="ai-drop" id="sub-waf" onchange="_subApplyFilter()">
+          <option value="">⛛ More · WAF/CDN</option>
+          <option value="Cloudflare">Cloudflare</option>
+          <option value="Imperva">Imperva</option>
+          <option value="AWS">AWS</option>
+          <option value="Direct">Direct (no WAF)</option>
+        </select>
+      </div>
+      <div class="ai-table-wrap">
+        <table class="ai-table">
+          <thead><tr>
+            <th onclick="_subSort('host')">URL ⇅</th>
+            <th onclick="_subSort('status_code')">Status ⇅</th>
+            <th onclick="_subSort('ports')">Portas ⇅</th>
+            <th onclick="_subSort('title')">Title ⇅</th>
+            <th onclick="_subSort('ip')">Host IP ⇅</th>
+            <th>Tech</th>
+            <th style="width:50px">Shot</th>
+            <th class="ai-actions-h">Actions</th>
+          </tr></thead>
+          <tbody id="sub-tbody"></tbody>
+        </table>
+        <div class="pager">
+          <span class="pager-info" id="sub-pinfo"></span>
+          <div class="pager-btns">
+            <button class="pb" id="sub-prev" onclick="_subPageNav(-1)">← Prev</button>
+            <span id="sub-pnums"></span>
+            <button class="pb" id="sub-next" onclick="_subPageNav(1)">Next →</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  _subApplyFilter();
+}
+
+// Asset status-code summary badges (Osmedeus-style)
+function _assetStatusSummary(hosts) {
+  const b = {2: 0, 3: 0, 4: 0, 5: 0};
+  (hosts || []).forEach(h => { const s = h.status_code; if (s) { const g = Math.floor(s / 100); if (b[g] != null) b[g]++; } });
+  const chip = (g, cls) => b[g] ? `<span class="ai-statchip ${cls}">${g}xx: ${b[g]}</span>` : "";
+  return chip(2, "s2") + chip(3, "s3") + chip(4, "s4") + chip(5, "s5");
+}
+
+// Colored tech chip with a stable hue per technology name
+function _techChip(t) {
+  const palette = ["#60a5fa", "#34d399", "#f59e0b", "#a78bfa", "#f472b6", "#22d3ee", "#fb7185", "#4ade80", "#facc15"];
+  let hash = 0;
+  for (let i = 0; i < t.length; i++) hash = (hash * 31 + t.charCodeAt(i)) >>> 0;
+  const c = palette[hash % palette.length];
+  return `<span class="ai-tech" style="color:${c};border-color:${c}33;background:${c}14">${esc(t)}</span>`;
+}
+
+function _infraChip(label, cls, title = "") {
+  return `<span class="ai-tech ai-tech-infra ${cls}" title="${escAttr(title || label)}">${esc(label)}</span>`;
+}
+
+function _cloudLabel(value) {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  if (/gcp|google/i.test(v)) return "Cloud GCP";
+  if (/aws|amazon/i.test(v)) return "Cloud AWS";
+  if (/azure|microsoft/i.test(v)) return "Cloud Azure";
+  if (/cloudflare/i.test(v)) return "Cloudflare";
+  return `Cloud ${v}`;
+}
+
+function _hostInfraSignals(h) {
+  const signals = [];
+  const waf = String(h?.waf || "Direct").trim();
+  const cloud = _cloudLabel(h?.cloud_provider || "");
+  const add = (label, cls, title = "") => {
+    if (!label || signals.some(s => s.label.toLowerCase() === label.toLowerCase())) return;
+    signals.push({label, cls, title});
+  };
+
+  if (!waf || /^direct$/i.test(waf)) add("Sem WAF", "direct", "Direct: sem WAF/CDN identificado");
+  else if (/direct/i.test(waf)) add("Sem WAF", "direct", waf);
+  else if (/unknown waf/i.test(waf)) add("WAF desconhecido", "unknown", waf);
+  else if (/cloudflare/i.test(waf)) add("CDN Cloudflare", "cloud", waf);
+  else if (/cloudfront|aws/i.test(waf)) add("CDN AWS", "cloud", waf);
+  else if (/gcp|google/i.test(waf)) add("Cloud GCP", "cloud", waf);
+  else if (/imperva|incapsula/i.test(waf)) add("WAF Imperva", "waf", waf);
+  else if (/akamai/i.test(waf)) add("CDN Akamai", "cloud", waf);
+  else add(`WAF ${waf}`, "waf", waf);
+
+  if (cloud) add(cloud, "cloud", h.cloud_provider || cloud);
+  const techText = (h?.technologies || []).join(" ");
+  if (/cloudflare/i.test(techText)) add("CDN Cloudflare", "cloud", "Detected in technologies");
+  if (/gcp|google cloud/i.test(techText)) add("Cloud GCP", "cloud", "Detected in technologies");
+  if (/aws|amazon|cloudfront/i.test(techText)) add("Cloud AWS", "cloud", "Detected in technologies");
+  if (/azure|microsoft/i.test(techText)) add("Cloud Azure", "cloud", "Detected in technologies");
+  return signals;
+}
+
+function _hostTechLabels(h) {
+  const labels = _hostInfraSignals(h).map(s => s.label);
+  (h?.technologies || []).forEach(t => {
+    const label = String(t || "").trim();
+    const low = label.toLowerCase();
+    if (labels.includes("CDN Cloudflare") && low === "cloudflare") return;
+    if (labels.includes("Cloud AWS") && /^(aws|amazon|amazon cloudfront|aws cloudfront)$/i.test(label)) return;
+    if (labels.includes("Cloud GCP") && /^(gcp|google cloud)$/i.test(label)) return;
+    if (labels.includes("Cloud Azure") && /^(azure|microsoft azure)$/i.test(label)) return;
+    if (label && !labels.some(x => x.toLowerCase() === label.toLowerCase())) labels.push(label);
+  });
+  return labels;
+}
+
+function _hostTechCell(h) {
+  const signals = _hostInfraSignals(h);
+  const infra = signals.map(s => _infraChip(s.label, s.cls, s.title)).join("");
+  const infraLabels = new Set(signals.map(s => s.label.toLowerCase()));
+  const techs = (h?.technologies || [])
+    .map(t => String(t || "").trim())
+    .filter(Boolean)
+    .filter(t => !(infraLabels.has("cdn cloudflare") && t.toLowerCase() === "cloudflare"))
+    .filter(t => !(infraLabels.has("cloud aws") && /^(aws|amazon|amazon cloudfront|aws cloudfront)$/i.test(t)))
+    .filter(t => !(infraLabels.has("cloud gcp") && /^(gcp|google cloud)$/i.test(t)))
+    .filter(t => !(infraLabels.has("cloud azure") && /^(azure|microsoft azure)$/i.test(t)))
+    .filter(t => !infraLabels.has(t.toLowerCase()));
+  const remainingSlots = Math.max(0, 4 - signals.length);
+  const shownTech = techs.slice(0, remainingSlots).map(_techChip).join("");
+  const overflow = techs.length > remainingSlots ? `<span class="ai-tech ai-tech-more">+${techs.length - remainingSlots}</span>` : "";
+  return infra || shownTech || overflow ? `${infra}${shownTech}${overflow}` : '<span class="ai-dash">—</span>';
+}
+
+function _fmtCL(n) {
+  if (n == null || n === "") return "—";
+  const v = Number(n);
+  if (!isFinite(v)) return "—";
+  return v.toLocaleString("en-US");
+}
+
+function renderSubdomainsTab(co, historyRows = null) {
+  const el = document.getElementById("tab-subdomains");
+  if (!el) return;
+  const rows = Array.isArray(historyRows)
+    ? historyRows
+    : Array.isArray(co.subdomain_history)
+      ? co.subdomain_history
+      : null;
+  if (rows === null) {
+    _renderSubInventoryShell(co, _buildSubdomainInventory(co, []), el);
+    _loadSubdomainHistory(co).then(history => {
+      if (state.currentId !== co.id) return;
+      co.subdomain_history = history;
+      _renderSubInventoryShell(co, _buildSubdomainInventory(co, history), el);
+    });
+    return;
+  }
+  _renderSubInventoryShell(co, _buildSubdomainInventory(co, rows), el);
+}
+
+function openSubdomainsFiltered(term) {
+  switchHostsPanel('subdomains');
+  setTimeout(() => {
+    const s = document.getElementById('sub-search');
+    if (s) {
+      s.value = term || '';
+      _subApplyFilter();
+    }
+  }, 100);
+}
+
+function renderDomainsTab(co, historyRows = null) {
+  const el = document.getElementById("tab-domains");
+  if (!el) return;
+  const rawDomains = Array.isArray(co.domains) ? co.domains.map(_normalizeScopeDomain).filter(Boolean) : [];
+  if (!rawDomains.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🌐</div><div class="empty-state-title">No domains configured</div><div class="empty-state-copy">Add at least one target domain to see domain-level work and generated subdomains here.</div></div>`;
+    const tc = document.getElementById("tc-domains");
+    if (tc) tc.textContent = "";
+    return;
+  }
+  const rows = Array.isArray(historyRows)
+    ? historyRows
+    : Array.isArray(co.subdomain_history)
+      ? co.subdomain_history
+      : null;
+  if (rows === null) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🌐</div><div class="empty-state-title">Loading domain inventory…</div><div class="empty-state-copy">Merging domains, hosts and subdomain history.</div></div>`;
+    _loadSubdomainHistory(co).then(history => {
+      if (state.currentId !== co.id) return;
+      co.subdomain_history = history;
+      renderDomainsTab(co, history);
+    });
+    return;
+  }
+
+  const inventory = _buildSubdomainInventory(co, rows);
+  const checkpointInfo = co.checkpoint_diff || null;
+  const newSet = new Set((checkpointInfo?.new_subdomains || []).map(_normalizeScopeDomain).filter(Boolean));
+  const buckets = new Map(rawDomains.map(d => [d, {domain: d, hosts: [], live: [], techs: new Set(), newHosts: []}]));
+  const other = {domain: "Other / shared", hosts: [], live: [], techs: new Set(), newHosts: []};
+  const domainSet = new Set(rawDomains);
+
+  inventory.forEach(h => {
+    const matched = _matchDomainForHost(h.host, rawDomains, domainSet);
+    const bucket = matched ? buckets.get(matched) : other;
+    bucket.hosts.push(h);
+    if ((h.status_code && h.status_code < 400) || (h.ports || []).length > 0) bucket.live.push(h);
+    if (newSet.has(h.host)) bucket.newHosts.push(h);
+    (h.technologies || []).forEach(t => bucket.techs.add(t));
+  });
+
+  const domainBuckets = [...buckets.values()].sort((a, b) =>
+    (b.hosts.length - a.hosts.length) || a.domain.localeCompare(b.domain));
+  if (other.hosts.length) domainBuckets.push(other);
+  _domBuckets = domainBuckets;
+  _domQuery = "";
+
+  const tc = document.getElementById("tc-domains");
+  if (tc) tc.textContent = rawDomains.length || 0;
+
+  const totalHosts = inventory.length;
+  const totalLive = inventory.filter(h => (h.status_code && h.status_code < 400) || (h.ports || []).length > 0).length;
+  const totalNew = checkpointInfo?.new_subdomains_count || 0;
+  const totalDomains = rawDomains.length;
+  const totalKnownTech = inventory.reduce((acc, h) => acc + ((h.technologies || []).length > 0 ? 1 : 0), 0);
+  const hostSelector = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn ${state.hostPanel === 'domains' ? 'btn-primary' : 'btn-secondary'}" style="font-size:.68rem;padding:4px 10px" onclick="switchHostsPanel('domains')">Domains</button>
+      <button class="btn ${state.hostPanel === 'subdomains' ? 'btn-primary' : 'btn-secondary'}" style="font-size:.68rem;padding:4px 10px" onclick="switchHostsPanel('subdomains')">Hosts</button>
+      <span style="font-size:.68rem;color:var(--text3)">Current view: ${state.hostPanel === 'subdomains' ? 'Subdomains' : 'Domains'}</span>
+    </div>`;
+
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Domains</div>
+          <div class="section-title">Domain work and generated hosts</div>
+          <div class="section-sub">Each domain is shown with the hosts it generated, live hosts, technology signals and change since the previous scan.</div>
+        </div>
+      </div>
+      ${hostSelector}
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <div class="stat-card" style="min-width:120px"><div class="stat-value">${totalDomains}</div><div class="stat-label">Domains</div></div>
+        <div class="stat-card" style="min-width:120px"><div class="stat-value">${totalHosts}</div><div class="stat-label">Hosts</div></div>
+        <div class="stat-card" style="min-width:120px"><div class="stat-value">${totalLive}</div><div class="stat-label">Live / HTTP</div></div>
+        <div class="stat-card" style="min-width:120px"><div class="stat-value">${totalNew}</div><div class="stat-label">New</div></div>
+      </div>
+      ${checkpointInfo && totalNew > 0 ? `
+      <div style="margin:12px 0;padding:10px 14px;background:#16a34a18;border:1px solid #4ade8044;border-radius:8px">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="font-size:.72rem;font-weight:700;color:#4ade80">⚡ Domain changes since last scan</div>
+          <div style="font-size:.72rem;color:var(--text2)">${totalNew} new hosts · compared to ${(checkpointInfo.compared_to||'').slice(0,19)}</div>
+        </div>
+      </div>` : ""}
+      <div class="table-shell">
+        <div class="table-topline">
+          <div class="table-title">Domain inventory</div>
+          <div class="table-note">Click a host chip to inspect the full host record.</div>
+        </div>
+        <div style="margin-bottom:10px">
+          <input id="dom-search" type="text" placeholder="Filter ${totalDomains.toLocaleString()} domains…"
+                 oninput="_domFilterCards()"
+                 style="width:100%;max-width:360px;padding:6px 10px;font-size:.72rem;font-family:var(--mono);background:rgba(255,255,255,0.03);border:1px solid var(--border2);border-radius:8px;color:var(--text1)">
+          <div id="dom-cards-meta" style="margin-top:6px;font-size:.66rem;color:var(--text3)"></div>
+        </div>
+        <div id="dom-cards" style="display:flex;flex-direction:column;gap:12px"></div>
+      </div>
+    </div>`;
+  _renderDomCards();
+}
+
+// Build a single domain card. Kept separate so search re-renders are cheap.
+function _domCardHTML(bucket) {
+  const techs = [...bucket.techs].sort().slice(0, 10);
+  const hosts = bucket.hosts.slice().sort((a, b) => a.host.localeCompare(b.host));
+  const liveCount = bucket.live.length;
+  const newCount = bucket.newHosts.length;
+  const sample = hosts.slice(0, 8);
+  return `
+    <div style="padding:14px 16px;border:1px solid var(--border2);border-radius:12px;background:rgba(255,255,255,0.02)">
+      <div style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap">
+        <div>
+          <div style="font-size:.92rem;font-weight:700;color:var(--text1);font-family:var(--mono)">${esc(bucket.domain)}</div>
+          <div style="margin-top:4px;font-size:.72rem;color:var(--text3)">${hosts.length} hosts · ${liveCount} live / HTTP · ${newCount} new</div>
+        </div>
+        <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick="openSubdomainsFiltered('${escAttr(bucket.domain)}')">Open Hosts</button>
+      </div>
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+        ${techs.length ? techs.map(t => `<span class="sd-tech-badge">${esc(t)}</span>`).join("") : `<span style="color:var(--text3);font-size:.65rem">No fingerprint</span>`}
+      </div>
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">
+        ${sample.length ? sample.map(h => `<code class="fg-host-chip fg-host-chip-full" onclick="openSubdomainsFiltered('${escAttr(h.host)}')" title="Open in Hosts">${esc(h.host)}</code>`).join("") : `<span style="color:var(--text3);font-size:.65rem">No hosts mapped yet</span>`}
+      </div>
+    </div>`;
+}
+
+// Render at most DOM_CARD_LIMIT cards from _domBuckets, filtered by _domQuery.
+function _renderDomCards() {
+  const host = document.getElementById("dom-cards");
+  if (!host) return;
+  const q = _domQuery.trim().toLowerCase();
+  const filtered = q ? _domBuckets.filter(b => b.domain.toLowerCase().includes(q)) : _domBuckets;
+  const shown = filtered.slice(0, DOM_CARD_LIMIT);
+  host.innerHTML = shown.map(_domCardHTML).join("") ||
+    `<div style="color:var(--text3);font-size:.7rem;padding:8px 0">No domains match “${esc(_domQuery)}”.</div>`;
+  const meta = document.getElementById("dom-cards-meta");
+  if (meta) {
+    meta.textContent = filtered.length > shown.length
+      ? `Showing ${shown.length} of ${filtered.length.toLocaleString()} domains${q ? " (filtered)" : ""} — refine the filter to narrow down.`
+      : `Showing ${shown.length} domain${shown.length === 1 ? "" : "s"}${q ? " (filtered)" : ""}.`;
+  }
+}
+
+function _domFilterCards() {
+  const inp = document.getElementById("dom-search");
+  _domQuery = inp ? inp.value : "";
+  _renderDomCards();
+}
+
+let _sub_sort = "host", _sub_asc = true;
+function _subSort(key){ if(_sub_sort===key) _sub_asc=!_sub_asc; else{_sub_sort=key;_sub_asc=true;} _subApplyFilter(); }
+function _subPageNav(d){ _sub_page+=d; _subRenderTable(_subFiltered()); }
+
+function _subFiltered(){
+  const q  = document.getElementById("sub-search")?.value.toLowerCase()||"";
+  const st = document.getElementById("sub-status")?.value||"";
+  const tc = document.getElementById("sub-tech")?.value||"";
+  const pt = document.getElementById("sub-port")?.value||"";
+  const rk = document.getElementById("sub-risk")?.value||"";
+  const wf = document.getElementById("sub-waf")?.value||"";
+  const NUMERIC = {status_code:1, ports:1};
+  return _sub_hosts.filter(h=>{
+    const techLabels = _hostTechLabels(h);
+    const mq = !q || h.host.toLowerCase().includes(q) || (h.ip||"").includes(q)
+              || (h.title||"").toLowerCase().includes(q)
+              || techLabels.join(",").toLowerCase().includes(q)
+              || _hostOpenPorts(h).some(p => String(p.port).includes(q) || String(p.service || "").toLowerCase().includes(q));
+    let ms = true;
+    if (st) ms = h.status_code && Math.floor(h.status_code/100) === Number(st);
+    const mt = !tc || techLabels.includes(tc);
+    const mp = !pt || _hostOpenPorts(h).some(p => String(p.port) === String(pt));
+    const mr = !rk || (rk === "risk" ? !!h._risk?.risk : !h._risk?.risk);
+    const mw = !wf || (h.waf||"Direct").includes(wf);
+    return mq && ms && mt && mp && mr && mw;
+  }).sort((a,b)=>{
+    if (NUMERIC[_sub_sort]) {
+      const av = _sub_sort === "ports" ? _hostOpenPorts(a).length : Number(a[_sub_sort]||0);
+      const bv = _sub_sort === "ports" ? _hostOpenPorts(b).length : Number(b[_sub_sort]||0);
+      return _sub_asc ? av-bv : bv-av;
+    }
+    const av=String(a[_sub_sort]||""), bv=String(b[_sub_sort]||"");
+    return _sub_asc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+}
+
+function _subApplyFilter(){
+  _sub_page = 1;
+  const filtered = _subFiltered();
+  const c = document.getElementById("sub-cnt"); if (c) c.textContent = filtered.length;
+  _subRenderTable(filtered);
+}
+
+function _subRenderTable(filtered){
+  const tot=filtered.length, totPg=Math.ceil(tot/SUB_PER_PAGE);
+  _sub_page = Math.max(1, Math.min(_sub_page, totPg||1));
+  const st=(_sub_page-1)*SUB_PER_PAGE, pg=filtered.slice(st, st+SUB_PER_PAGE);
+  const pi=document.getElementById("sub-pinfo"); if(pi) pi.textContent=`${st+1}–${Math.min(st+SUB_PER_PAGE,tot)} of ${tot}`;
+  const pr=document.getElementById("sub-prev"); if(pr) pr.disabled=_sub_page<=1;
+  const nx=document.getElementById("sub-next"); if(nx) nx.disabled=_sub_page>=totPg;
+  let pn="";
+  for(let i=Math.max(1,_sub_page-2);i<=Math.min(totPg,_sub_page+2);i++)
+    pn+=`<button class="pb${i===_sub_page?" active":""}" onclick="_sub_page=${i};_subRenderTable(_subFiltered())">${i}</button>`;
+  const pne=document.getElementById("sub-pnums"); if(pne) pne.innerHTML=pn;
+  const tb=document.getElementById("sub-tbody"); if(!tb) return;
+  tb.innerHTML = pg.map(h => {
+    const scheme = (h.status_code || (h.ports||[]).includes('443') || !(h.ports||[]).includes('80')) ? 'https' : 'http';
+    const url   = `${scheme}://${h.host}/`;
+    const sc    = h.status_code;
+    const scCls = sc ? (sc<300?'s2':sc<400?'s3':sc<500?'s4':'s5') : 'na';
+    const scHtml= `<span class="ai-status ${scCls}">${sc}</span>`;
+    const techCell = _hostTechCell(h);
+    const title = h.title ? esc(h.title) : '<span class="ai-dash">—</span>';
+    return `<tr class="ai-row" onclick="openHostDrawer('${escAttr(h.host)}')">
+      <td class="ai-url-cell">
+        <button class="ai-mini" title="Copy URL" onclick="event.stopPropagation();copyToClipboard('${escAttr(url)}')">⧉</button>
+        <a class="ai-mini" href="${escAttr(url)}" target="_blank" rel="noopener" title="Open" onclick="event.stopPropagation()">↗</a>
+        <a class="ai-url" href="${escAttr(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(url)}</a>
+      </td>
+      <td>${scHtml}</td>
+      <td class="ai-cl">${_fmtHostPorts(h)}</td>
+      <td class="ai-title" title="${escAttr(h.title||'')}">${title}</td>
+      <td class="ai-ip">${esc(h.ip||'—')}</td>
+      <td><div class="ai-tech-row">${techCell}</div></td>
+      <td class="ai-shot">${h.screenshot ? `<img src="${esc('/' + h.screenshot)}" style="width:42px;height:26px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer;vertical-align:middle" onerror="this.style.display='none'" onmouseenter="ssPopoverShow(event,${JSON.stringify('/' + h.screenshot).replace(/"/g,'&quot;')},${JSON.stringify(h.host || '').replace(/"/g,'&quot;')})" onmouseleave="ssPopoverHide()" onclick="event.stopPropagation()">` : '—'}</td>
+      <td class="ai-actions"><button class="ai-eye" title="View details" onclick="event.stopPropagation();openHostDrawer('${escAttr(h.host)}')">◉</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderSubHistoryTab(co) {
+  const el = document.getElementById("tab-subhistory");
+  if (!el) return;
+
+  fetch(`/api/data/${co.id}/subhistory`, {headers: _authHeaders()})
+    .then(r => r.json())
+    .then(data => {
+      renderHistoryContent(el, data.history || [], co.id);
+    })
+    .catch(() => {
+      el.innerHTML = `
+        <div style="padding:60px 20px;text-align:center;color:var(--text3)">
+          <div style="font-size:2rem;margin-bottom:12px">📜</div>
+          <div style="font-size:.9rem;color:var(--text2);margin-bottom:6px">Subdomain history</div>
+          <div style="font-size:.75rem">Run the pipeline to start tracking subdomain changes.</div>
+        </div>`;
+    });
+}
+
+function renderHistoryContent(el, history, cid) {
+  if (!history || history.length === 0) {
+    el.innerHTML = `
+      <div style="padding:60px 20px;text-align:center;color:var(--text3)">
+        <div style="font-size:2rem;margin-bottom:12px">📜</div>
+        <div style="font-size:.9rem;color:var(--text2);margin-bottom:6px">No history yet</div>
+        <div style="font-size:.75rem">History will be populated after each pipeline scan.</div>
+      </div>`;
+    return;
+  }
+
+  const added = history.filter(h => h.event === "added");
+  const removed = history.filter(h => h.event === "removed");
+  const seen = history.filter(h => h.event === "seen");
+
+  el.innerHTML = `
+    <div style="padding:24px 0 8px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+        <div style="font-size:1rem;font-weight:700">📜 Subdomain Timeline</div>
+        <div style="font-size:0.75rem;color:var(--text3)">${history.length} eventos</div>
+      </div>
+
+      <div class="stat-strip" style="margin-bottom:18px">
+        <div class="stat-box" style="border-left:3px solid var(--green)">
+          <div class="stat-num" style="color:var(--green)">${added.length}</div>
+          <div class="stat-lbl">Adicionados</div>
+        </div>
+        <div class="stat-box" style="border-left:3px solid var(--red)">
+          <div class="stat-num" style="color:var(--red)">${removed.length}</div>
+          <div class="stat-lbl">Removidos</div>
+        </div>
+        <div class="stat-box" style="border-left:3px solid var(--blue)">
+          <div class="stat-num" style="color:var(--blue)">${seen.length}</div>
+          <div class="stat-lbl">Vistos</div>
+        </div>
+      </div>
+
+      <div class="sec-hdr">
+        <span class="sec-title">Eventos Recentes</span>
+        <span class="sec-cnt">${Math.min(history.length, 100)}</span>
+      </div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Subdomain</th>
+              <th>Evento</th>
+              <th>Status</th>
+              <th>Fonte</th>
+              <th>First Seen</th>
+              <th>Last Seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${history.slice(0, 100).map(h => {
+              const eventStyle = {
+                added: "color:var(--green)",
+                removed: "color:var(--red)",
+                seen: "color:var(--blue)"
+              }[h.event] || "";
+              const eventLabel = {
+                added: "➕ Adicionado",
+                removed: "➖ Removido",
+                seen: "👁️ Visto"
+              }[h.event] || h.event;
+              return `
+                <tr>
+                  <td><span class="host-a">${h.subdomain}</span></td>
+                  <td><span style="${eventStyle};font-weight:600;font-size:.7rem">${eventLabel}</span></td>
+                  <td>${h.is_alive ? '<span style="color:var(--green);font-size:.68rem">● Vivo</span>' : '<span style="color:var(--text3);font-size:.68rem">○ Morto</span>'}</td>
+                  <td><span style="font-size:.7rem;color:var(--text2)">${h.source || "—"}</span></td>
+                  <td><span style="font-size:.7rem;color:var(--text3)">${h.first_seen?.split("T")[0] || "—"}</span></td>
+                  <td><span style="font-size:.7rem;color:var(--text3)">${h.last_seen?.split("T")[0] || "—"}</span></td>
+                </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  URL CLASSIFICATION ENGINE (red-team focused)
+// ════════════════════════════════════════════════════════════════════════
+const URL_PATTERNS = [
+  { type: 'Admin Panel',    severity: 'critical', score: 100, patterns: [/\/admin(\/|$)/i, /\/wp-admin/i, /\/administrator/i, /\/manage(\/|$)/i, /\bdashboard\b/i, /\/panel(\/|$)/i, /\/cpanel/i, /\/phpmyadmin/i, /\/pma\//i, /\/jenkins/i, /\/console/i] },
+  { type: 'API Endpoint',   severity: 'high',     score: 75,  patterns: [/\/api\//i, /\/graphql/i, /\/rest\//i, /\/v[12]\//i, /\/oauth/i, /\bswagger\b/i, /\/openapi/i, /\/endpoint/i, /\/webhook/i, /\/callback/i] },
+  { type: 'Dev / Stage Env',severity: 'high',     score: 70,  patterns: [/\/dev\//i, /\/staging\//i, /\/stage\//i, /\btest\//i, /\/hml\//i, /\/sandbox/i, /\/uat\//i, /\/qa\//i, /\/homolog/i] },
+  { type: 'Config / Secrets',severity:'critical', score: 100, patterns: [/\.env$/i, /\/\.git\//i, /\/\.svn\//i, /\bconfig\b/i, /wp-config/i, /\.htaccess/i, /docker-compose/i, /\.npmrc/i, /\.pypirc/i, /credentials/i] },
+  { type: 'Backup File',    severity: 'high',     score: 85,  patterns: [/\.bak$/i, /\.backup$/i, /\.sql$/i, /\.tar\.gz$/i, /\.zip$/i, /\/backup\//i, /\.old$/i, /\.orig$/i] },
+  { type: 'Login / Auth',   severity: 'high',     score: 80,  patterns: [/\/login/i, /\/signin/i, /\/auth\b/i, /\/sso\//i, /\/oauth2/i, /\/saml/i, /\/token/i, /\/password/i, /\/reset-password/i] },
+  { type: 'File Upload',    severity: 'medium',   score: 60,  patterns: [/\/upload/i, /\/file\//i, /\/attachment/i, /\/media\//i, /\/assets\//i, /\/static\//i] },
+  { type: 'Internal Path',  severity: 'high',     score: 90,  patterns: [/\/internal/i, /\/private/i, /\/intranet/i, /\b10\.\d+\./, /\b172\.(1[6-9]|2\d|3[01])\./, /\b192\.168\./, /\/metadata/i, /instance-profile/i] },
+  { type: 'Log File',       severity: 'medium',   score: 65,  patterns: [/\.log$/i, /\/logs\//i, /debug\.log/i, /error\.log/i, /access\.log/i] },
+  { type: 'XML / JSON Data',severity:'low',       score: 30,  patterns: [/\.xml$/i, /data\.json/i, /package\.json/i, /composer\.json/i, /sitemap/i] },
+  { type: 'WebSocket',      severity: 'medium',   score: 55,  patterns: [/^wss?:\/\//i, /\/ws\b/i, /\/socket/i, /\/realtime/i] },
+  { type: 'Generic HTTP',   severity: 'info',     score: 20,  patterns: [/\.php$/i, /\.asp/i, /\.aspx$/i, /\.jsp$/i, /\.do$/i, /\.action$/i, /\.cfm$/i] },
+];
+
+function classifyUrl(url) {
+  const u = String(url || '').toLowerCase();
+  for (const group of URL_PATTERNS) {
+    for (const re of group.patterns) {
+      if (re.test(u)) return { type: group.type, severity: group.severity, score: group.score };
+    }
+  }
+  // Fallback with dynamic scoring
+  if (/\.(php|asp|aspx|jsp|do|action|cfm|cgi|pl|py|rb)$/i.test(u)) return { type: 'Generic HTTP', severity: 'info', score: 20 };
+  if (u.includes('?')) return { type: 'Dynamic Route', severity: 'info', score: 25 };
+  return { type: 'Static Resource', severity: 'info', score: 5 };
+}
+
+function _classifyUrlMemo(url) {
+  const k = String(url || '').toLowerCase();
+  if (!_classifyCache) _classifyCache = {};
+  if (_classifyCache[k]) return _classifyCache[k];
+  return (_classifyCache[k] = classifyUrl(url));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  UNIFIED ENDPOINTS TAB — URLs + JS endpoints + secrets merged (v2)
+// ════════════════════════════════════════════════════════════════════════
+
+function invalidateEndpointCache(co) {
+  if (co) {
+    delete co._unifiedEndpoints;
+    delete co._unifiedSecrets;
+    delete co._unifiedSources;
+    delete co._epStats;
+  }
+  _classifyCache = null;
+}
+
+function buildUnifiedEndpoints(co) {
+  if (co._unifiedEndpoints && co._unifiedSources) return;
+
+  const allEndpoints = [];
+  const allSecrets = [];
+  const sources = [];
+
+  // Wayback
+  if (co.wayback_data?.interesting) {
+    co.wayback_data.interesting.forEach(u => {
+      const rawUrl = typeof u === 'string' ? u : (u.url || '');
+      const cls = _classifyUrlMemo(rawUrl);
+      allEndpoints.push({ url: rawUrl, method: 'GET', host: typeof u === 'object' ? (u.host || '') : '', path: typeof u === 'object' ? (u.path || '') : '', source: 'wayback', type: cls.type, severity: cls.severity, status: typeof u === 'object' ? u.status : null });
+    });
+    sources.push({ name: 'Wayback', count: co.wayback_data.interesting_count || 0, key: 'wayback' });
+  }
+
+  // URLFinder
+  if (co.urlfinder_data?.urls) {
+    co.urlfinder_data.urls.forEach(u => {
+      const rawUrl = typeof u === 'string' ? u : (u.url || u.path || '');
+      const cls = _classifyUrlMemo(rawUrl);
+      allEndpoints.push({ url: rawUrl, method: 'GET', host: typeof u === 'object' ? (u.host || '') : '', path: typeof u === 'object' ? (u.path || '') : '', source: 'urlfinder', type: cls.type, severity: cls.severity });
+    });
+    sources.push({ name: 'URLFinder', count: co.urlfinder_data.urls.length, key: 'urlfinder' });
+  }
+
+  // JS Endpoints + Secrets
+  if (co.js_data?.js_files) {
+    co.js_data.js_files.forEach(js => {
+      (js.endpoints || []).forEach(ep => {
+        const eUrl = typeof ep === 'string' ? ep : (ep.url || ep.endpoint || ep.path || '');
+        if (!eUrl) return;
+        const method = (typeof ep === 'object' ? (ep.method || 'GET') : 'GET').toUpperCase();
+        const cls = _classifyUrlMemo(eUrl);
+        allEndpoints.push({ url: eUrl, method, host: js.host || '', path: typeof ep === 'object' ? (ep.path || '') : '', source: 'js', type: cls.type, severity: typeof ep === 'object' ? (ep.severity || cls.severity) : cls.severity, jsFile: js.file || js.url || '' });
+      });
+      (js.secrets || []).forEach(s => {
+        allSecrets.push({ type: s.type || 'Unknown', value: s.secret || s.value || s, file: js.file || js.url || '', host: js.host || '', severity: s.severity || 'high' });
+      });
+    });
+    sources.push({ name: 'JS Extraction', count: co.js_data.total_endpoints || 0, key: 'js' });
+  }
+
+  // API Panels
+  if (co.api_exposure?.findings) {
+    co.api_exposure.findings.forEach(f => {
+      const rawUrl = f.url || '';
+      if (rawUrl) {
+        const cls = _classifyUrlMemo(rawUrl);
+        allEndpoints.push({ url: rawUrl, method: f.method || '—', host: f.host || '', path: f.path || rawUrl, source: 'nuclei', type: 'API Panel', severity: f.severity || cls.severity });
+      }
+    });
+    sources.push({ name: 'API Panels', count: co.api_exposure.total || 0, key: 'nuclei' });
+  }
+
+  // Deduplicate & sort
+  const seen = new Set();
+  const unique = allEndpoints.filter(ep => {
+    if (!ep.url || typeof ep.url !== 'string') return false;
+    const k = ep.method + '|' + ep.url;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  const sevOrder = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+  unique.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity] || String(a.url || '').localeCompare(String(b.url || '')));
+
+  // Compute stats
+  const stats = { critical: 0, high: 0, medium: 0, low: 0, info: 0, total: unique.length };
+  const byType = {};
+  const actualMethods = { GET: 0, POST: 0, PUT: 0, DELETE: 0, PATCH: 0 };
+  unique.forEach(ep => {
+    stats[ep.severity] = (stats[ep.severity] || 0) + 1;
+    byType[ep.type] = (byType[ep.type] || 0) + 1;
+    const m = ep.method.toUpperCase();
+    if (actualMethods.hasOwnProperty(m)) actualMethods[m]++;
+  });
+
+  co._unifiedEndpoints = unique;
+  co._unifiedSecrets = allSecrets;
+  co._unifiedSources = sources;
+  co._epStats = { stats, byType, actualMethods };
+}
+
+const SEV_CFG = {
+  critical: { color: '#fb7185', bg: 'rgba(244,63,94,0.12)', border: 'rgba(244,63,94,0.25)', label: 'Critical', labelShort: 'CRIT' },
+  high:     { color: '#fb923c', bg: 'rgba(251,146,60,0.12)', border: 'rgba(251,146,60,0.25)', label: 'High',     labelShort: 'HIGH' },
+  medium:   { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)',  border: 'rgba(251,191,36,0.25)',  label: 'Medium',   labelShort: 'MED' },
+  low:      { color: '#4ade80', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.2)',    label: 'Low',      labelShort: 'LOW' },
+  info:     { color: '#60a5fa', bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.2)',   label: 'Info',     labelShort: 'INFO' },
+};
+
+function renderEndpointsTab(co) {
+  const el = document.getElementById("tab-endpoints");
+  if (!el) return;
+
+  // Show skeleton while building
+  el.innerHTML = `<div class="section-shell">
+    <div class="skel skel-text" style="width:30%"></div>
+    <div class="skel skel-text" style="width:60%"></div>
+    <div class="skel skel-card" style="height:120px;margin-top:12px"></div>
+  </div>`;
+
+  // Use requestAnimationFrame to let skeleton paint before heavy work
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      _renderEndpointsTabInner(co, el);
+    });
+  });
+}
+
+function _renderEndpointsTabInner(co, el) {
+  buildUnifiedEndpoints(co);
+  const unique = co._unifiedEndpoints;
+  const allSecrets = co._unifiedSecrets;
+  const sources = co._unifiedSources;
+  const { stats, byType, actualMethods } = co._epStats;
+
+  window._urlData = unique;
+  window._allSecrets = allSecrets;
+  window._urlPage = 1;
+  window._urlActiveSev = '';
+  window._urlActiveMethod = '';
+  window._urlGrouped = false;
+
+  const hasFilters = window._urlActiveSev || window._urlActiveMethod;
+
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Endpoint Inventory</div>
+          <div class="section-title">URLs + JS routes + API panels — unified</div>
+          <div class="section-sub">Auto-classified by type and risk. Click severity or method stats to filter. Rows expand on click for full details.</div>
+        </div>
+        <div class="section-actions">
+          ${hasFilters ? `<button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick="clearUrlFilters()">✕ Clear Filters</button>` : ''}
+          <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick="copyUrlsToClipboard()">📋 Copy Visible</button>
+          <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick="exportEndpointsCSV()">⬇ CSV</button>
+        </div>
+      </div>
+
+      ${unique.length === 0 && allSecrets.length === 0 ? `
+        <div class="empty-state"><div class="empty-state-icon">🔗</div><div class="empty-state-title">No endpoints collected</div><div class="empty-state-copy">Run wayback, urlfinder, js_endpoints and api_panels modules.</div></div>
+      ` : `
+        <!-- Stat strip: totals + methods + secrets (all clickable) -->
+        <div class="url-stat-strip">
+          <div class="url-stat${!window._urlActiveSev && !window._urlActiveMethod ? ' active' : ''}" onclick="filterUrlsBy('','')">
+            <div class="url-stat-num" style="color:var(--teal)">${unique.length}</div>
+            <div class="url-stat-lbl">ENDPOINTS</div>
+          </div>
+          ${['critical','high','medium','low','info'].map(sev => {
+            const n = stats[sev] || 0;
+            if (!n) return '';
+            const c = SEV_CFG[sev];
+            return `<div class="url-stat" data-filter="${sev}" onclick="filterUrlsBy('${sev}','')">
+              <div class="url-stat-num" style="color:${c.color}">${n}</div>
+              <div class="url-stat-lbl">${c.label}</div>
+            </div>`;
+          }).join('')}
+          <div style="grid-column:span 2;border-top:1px solid var(--border);margin:2px 0"></div>
+          ${Object.entries(actualMethods).filter(([,c])=>c>0).sort(([a],[b])=>['GET','POST','PUT','DELETE','PATCH'].indexOf(a)-['GET','POST','PUT','DELETE','PATCH'].indexOf(b)).map(([m,c]) => `
+            <div class="url-stat" data-filter-method="${m}" onclick="filterUrlsBy('','${m}')">
+              <div class="url-stat-num" style="color:${_methodColor(m)}">${c}</div>
+              <div class="url-stat-lbl">${m}</div>
+            </div>
+          `).join('')}
+          ${allSecrets.length > 0 ? `
+            <div class="url-stat">
+              <div class="url-stat-num" style="color:var(--orange)">${allSecrets.length}</div>
+              <div class="url-stat-lbl">SECRETS</div>
+            </div>
+          ` : ''}
+        </div>
+
+        <!-- Source chips -->
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          ${sources.map(s => `<span class="source-chip"><span style="color:var(--text3)">${s.name}:</span> <b>${s.count}</b></span>`).join('')}
+        </div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar" style="margin-bottom:10px">
+          <input type="text" id="url-search" class="fi grow" placeholder="Search URL, host, path…" oninput="filterUrlsTable()" value="${esc(window._urlSearch || '')}">
+          <select id="url-type-filter" class="fi" onchange="filterUrlsTable()">
+            <option value="">All types</option>
+            ${Object.keys(byType).sort().map(t => `<option value="${esc(t)}"${window._urlTypeFilter === t ? ' selected' : ''}>${esc(t)} (${byType[t]})</option>`).join('')}
+          </select>
+          <select id="url-source-filter" class="fi" onchange="filterUrlsTable()">
+            <option value="">All sources</option>
+            ${sources.map(s => `<option value="${s.name}"${window._urlSourceFilter === s.name ? ' selected' : ''}>${s.name}</option>`).join('')}
+          </select>
+          <select id="url-method-filter" class="fi" onchange="filterUrlsTable()">
+            <option value="">All methods</option>
+            ${['GET','POST','PUT','DELETE','PATCH'].filter(m=>actualMethods[m]>0).map(m => `<option value="${m}"${window._urlMethodFilter === m ? ' selected' : ''}>${m} (${actualMethods[m]})</option>`).join('')}
+          </select>
+          <button class="btn btn-secondary" style="font-size:.64rem;padding:4px 10px;white-space:nowrap" onclick="toggleUrlGrouping()" id="url-group-btn">
+            📂 ${window._urlGrouped ? 'Flat List' : 'Group by Path'}
+          </button>
+          <span style="font-size:.68rem;color:var(--text3);padding:6px 4px" id="url-cnt">${unique.length} endpoints</span>
+        </div>
+
+        <!-- Endpoints Table / Grouped View -->
+        <div id="urls-table-wrap"></div>
+        <div class="pager" style="margin-top:8px">
+          <span class="pager-info" id="url-pinfo"></span>
+          <div class="pager-btns" id="url-pbtns"></div>
+        </div>
+
+        <!-- Secrets section -->
+        ${allSecrets.length > 0 ? `
+          <div class="section-head" style="margin-top:24px">
+            <div class="section-head-main">
+              <div class="section-kicker">🔑 Embedded Secrets</div>
+              <div class="section-title">Credentials, tokens and keys from JS</div>
+              <div class="section-sub">Extracted from JavaScript bundles. Click masked values to reveal.</div>
+            </div>
+          </div>
+          <div class="url-table-wrap">
+            <table class="url-table">
+              <thead><tr>
+                <th style="width:15%">Type</th>
+                <th style="width:42%">Value (click to reveal)</th>
+                <th style="width:25%">File</th>
+                <th style="width:10%">Host</th>
+                <th style="width:8%">Risk</th>
+              </tr></thead>
+              <tbody>
+                ${allSecrets.map(s => {
+                  const masked = maskSecret(s.value);
+                  const sevColor = s.severity === 'critical' ? '#fb7185' : s.severity === 'high' ? '#fb923c' : '#fbbf24';
+    return `<tr>
+                    <td><span class="url-type-badge" style="background:rgba(251,146,60,0.1);color:#fb923c;border:1px solid rgba(251,146,60,0.2)">${esc(s.type)}</span></td>
+                    <td><code class="secret-value" title="Click to reveal" onclick="this.textContent='${esc(s.value).replace(/'/g,"\\'")}';this.classList.add('revealed')">${esc(masked)}</code></td>
+                    <td><span style="font-size:.68rem;font-family:var(--mono);color:var(--text2)">${esc(s.file)}</span></td>
+                    <td><span style="font-size:.68rem;color:var(--text3)">${esc(s.host || '—')}</span></td>
+                    <td><span class="url-risk-badge" style="background:rgba(251,146,60,0.1);color:${sevColor}">${s.severity.toUpperCase()}</span></td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        ` : ''}
+      `}
+    </div>`;
+
+  filterUrlsTable();
+}
+
+// ── Clear filters ──────────────────────────────────────────────────────────
+
+function clearUrlFilters() {
+  window._urlActiveSev = '';
+  window._urlActiveMethod = '';
+  window._urlPage = 1;
+  window._urlSearch = '';
+  window._urlTypeFilter = '';
+  window._urlSourceFilter = '';
+  window._urlMethodFilter = '';
+  const co = allCompanies().find(c => c.id === state.currentId);
+  if (co) renderEndpointsTab(co);
+}
+
+function toggleUrlGrouping() {
+  window._urlGrouped = !window._urlGrouped;
+  window._urlPage = 1;
+  const btn = document.getElementById('url-group-btn');
+  if (btn) btn.textContent = window._urlGrouped ? '📂 Flat List' : '📂 Group by Path';
+  filterUrlsTable();
+}
+
+// ── Endpoint table filtering and helpers ─────────────────────────────────────
+
+function filterUrlsBy(sev, method) {
+  window._urlActiveSev = sev || '';
+  window._urlActiveMethod = method || '';
+  window._urlPage = 1;
+  $$('.url-stat').forEach(el => {
+    const filterSev = el.dataset.filter;
+    const filterMethod = el.dataset.filterMethod;
+    if (filterSev) el.classList.toggle('active', filterSev === sev && !method);
+    else if (filterMethod) el.classList.toggle('active', filterMethod === method);
+    else el.classList.toggle('active', !sev && !method);
+  });
+  filterUrlsTable();
+}
+
+function filterUrlsTable() {
+  if (!window._urlData) return;
+  const search = (document.getElementById('url-search')?.value || '').toLowerCase();
+  window._urlSearch = search;
+  const typeFilter = document.getElementById('url-type-filter')?.value || '';
+  window._urlTypeFilter = typeFilter;
+  const sourceFilter = document.getElementById('url-source-filter')?.value || '';
+  window._urlSourceFilter = sourceFilter;
+  const methodFilter = document.getElementById('url-method-filter')?.value || '';
+  window._urlMethodFilter = methodFilter;
+  const activeSev = window._urlActiveSev || '';
+  const activeMethod = window._urlActiveMethod || '';
+
+  let filtered = window._urlData.filter(u => {
+    if (search && !`${u.url} ${u.host} ${u.path} ${u.type} ${u.method}`.toLowerCase().includes(search)) return false;
+    if (typeFilter && u.type !== typeFilter) return false;
+    if (sourceFilter) {
+      const srcMap = { 'Wayback': 'wayback', 'URLFinder': 'urlfinder', 'JS Extraction': 'js', 'API Panels': 'nuclei' };
+      if ((srcMap[sourceFilter] || sourceFilter.toLowerCase()) !== u.source) return false;
+    }
+    if (methodFilter && u.method.toUpperCase() !== methodFilter.toUpperCase()) return false;
+    if (activeSev && u.severity !== activeSev) return false;
+    if (activeMethod && u.method.toUpperCase() !== activeMethod.toUpperCase()) return false;
+    return true;
+  });
+
+  // Update count badge
+  const cnt = document.getElementById('url-cnt');
+  const activeLabel = [activeSev, activeMethod].filter(Boolean).join(' + ');
+  if (cnt) cnt.textContent = `${filtered.length} endpoint${filtered.length !== 1 ? 's' : ''}${activeLabel ? ' (' + activeLabel + ')' : ''}`;
+
+  if (window._urlGrouped) {
+    _renderGroupedView(filtered);
+  } else {
+    _renderFlatTable(filtered);
+  }
+}
+
+// ── Flat table view (with expandable rows) ──────────────────────────────────
+
+function _renderFlatTable(filtered) {
+  const wrap = document.getElementById('urls-table-wrap');
+  if (!wrap) return;
+
+  const perPage = 50;
+  const total = filtered.length;
+  const totalPages = Math.ceil(total / perPage) || 1;
+  window._urlPage = Math.max(1, Math.min(window._urlPage, totalPages));
+  const start = (window._urlPage - 1) * perPage;
+  const page = filtered.slice(start, start + perPage);
+
+  const pinfo = document.getElementById('url-pinfo');
+  if (pinfo) pinfo.textContent = total ? `${start + 1}\u2013${Math.min(start + perPage, total)} of ${total}` : '0 results';
+
+  if (!total) {
+    wrap.innerHTML = '<div class="url-table-wrap"><table class="url-table"><tbody><tr><td colspan="7" style="text-align:center;padding:28px;color:var(--text3)">No endpoints match filters</td></tr></tbody></table></div>';
+    const pbtns = document.getElementById('url-pbtns');
+    if (pbtns) pbtns.innerHTML = '';
+    return;
+  }
+
+  const methodColors = { GET: '#4ade80', POST: '#fb923c', PUT: '#60a5fa', DELETE: '#fb7185', PATCH: '#a78bfa' };
+
+  wrap.innerHTML = `<div class="url-table-wrap">
+    <table class="url-table">
+      <thead><tr>
+        <th style="width:6%">Method</th>
+        <th style="width:42%">URL</th>
+        <th style="width:13%">Type</th>
+        <th style="width:13%">Host</th>
+        <th style="width:9%">Source</th>
+        <th style="width:9%">Risk</th>
+        <th style="width:8%">Copy</th>
+      </tr></thead>
+      <tbody id="urls-tbody">
+        ${page.map((ep, i) => {
+          const sc = SEV_CFG[ep.severity] || SEV_CFG.info;
+          const mc = methodColors[ep.method] || 'var(--text3)';
+          const idx = start + i;
+          const displayUrl = ep.url.length > 80 ? ep.url.substring(0, 77) + '\u2026' : ep.url;
+          const hasQuery = ep.url.includes('?');
+          return `<tr class="ep-row" onclick="toggleEpRow(this,'${idx}')" title="Click to expand details">
+            <td><span class="js-method-badge" style="background:${mc}12;color:${mc};border:1px solid ${mc}25;font-weight:700">${esc(ep.method)}</span>${ep.auth && ep.auth !== 'unknown' && ep.auth !== 'none_detected' ? `<span class="method-badge" style="background:var(--border);color:var(--teal);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:3px" title="Auth: ${esc(ep.auth)}">${ep.auth === 'bearer' ? '🔑JWT' : ep.auth === 'api_key_header' ? '🔑API' : ep.auth === 'basic' ? '🔒Basic' : ep.auth === 'oauth2' ? '🔑OAuth2' : ep.auth === 'cookie_session' ? '🍪Session' : esc(ep.auth)}</span>` : ep.auth === 'none_detected' ? `<span class="method-badge" style="background:rgba(239,68,68,0.15);color:var(--red);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:3px" title="No auth detected">⚠ NOAUTH</span>` : ''}</td>
+            <td>
+              <div class="url-cell">
+                <span class="url-cell-link ep-url-main">${esc(displayUrl)}</span>
+                ${hasQuery ? '<span class="ep-expand-hint">\u25B6 Expand</span>' : ''}
+              </div>
+            </td>
+            <td><span class="url-type-badge" style="background:${sc.bg};color:${sc.color};border:1px solid ${sc.color}22">${esc(ep.type)}</span></td>
+            <td><span class="url-cell-host">${esc(ep.host || '\u2014')}</span></td>
+            <td><span class="source-chip" style="font-size:.6rem">${esc(ep.source)}</span></td>
+            <td><span class="url-risk-badge" style="background:${sc.bg};color:${sc.color};font-weight:700">${sc.labelShort}</span></td>
+            <td><button class="url-copy-btn" onclick="copyToClipboard('${escAttr(ep.url).replace(/'/g,"\\'")}');event.stopPropagation()" title="Copy URL">\uD83D\uDCCB</button></td>
+          </tr>
+          <tr class="ep-detail ep-detail-${idx}" style="display:none">
+            <td colspan="7">
+              <div class="ep-detail-box">
+                <div class="ep-detail-row"><span class="ep-detail-k">Full URL</span><a href="${escAttr(ep.url)}" target="_blank" rel="noopener" class="ep-detail-url">${esc(ep.url)}</a></div>
+                <div class="ep-detail-row"><span class="ep-detail-k">Path</span><code class="ep-detail-code">${esc(ep.path || '/')}</code></div>
+                ${hasQuery ? `<div class="ep-detail-row"><span class="ep-detail-k">Query Params</span><code class="ep-detail-code">${esc(_extractQuery(ep.url))}</code></div>` : ''}
+                <div class="ep-detail-row"><span class="ep-detail-k">Host</span><span style="color:var(--text2)">${esc(ep.host || '\u2014')}</span></div>
+                <div class="ep-detail-row"><span class="ep-detail-k">Source</span><span class="source-chip" style="font-size:.62rem">${esc(ep.source)}</span></div>
+                ${ep.status ? `<div class="ep-detail-row"><span class="ep-detail-k">Status</span><span style="color:var(--text2);font-family:var(--mono)">${ep.status}</span></div>` : ''}
+                ${ep.jsFile ? `<div class="ep-detail-row"><span class="ep-detail-k">JS File</span><span style="color:var(--text2);font-family:var(--mono)">${esc(ep.jsFile)}</span></div>` : ''}
+                <div class="ep-detail-actions">
+                  <button class="btn btn-secondary" style="font-size:.62rem;padding:3px 8px" onclick="copyToClipboard('${escAttr(ep.url).replace(/'/g,"\\'")}')">\uD83D\uDCCB Copy URL</button>
+                  <a href="${escAttr(ep.url)}" target="_blank" rel="noopener" class="btn btn-secondary" style="font-size:.62rem;padding:3px 8px;text-decoration:none">\u2197 Open</a>
+                </div>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
+
+  // Pagination
+  const pbtns = document.getElementById('url-pbtns');
+  if (pbtns && totalPages > 1) {
+    let btns = '';
+    for (let i = Math.max(1, window._urlPage - 2); i <= Math.min(totalPages, window._urlPage + 2); i++)
+      btns += `<button class="pb${i === window._urlPage ? ' active' : ''}" onclick="window._urlPage=${i};filterUrlsTable()">${i}</button>`;
+    if (window._urlPage > 1) btns = `<button class="pb" onclick="window._urlPage--;filterUrlsTable()">\u2190</button>` + btns;
+    if (window._urlPage < totalPages) btns += `<button class="pb" onclick="window._urlPage++;filterUrlsTable()">\u2192</button>`;
+    pbtns.innerHTML = btns;
+  } else if (pbtns) { pbtns.innerHTML = ''; }
+}
+
+// ── Grouped view (by path pattern) ──────────────────────────────────────────
+
+function _renderGroupedView(filtered) {
+  const wrap = document.getElementById('urls-table-wrap');
+  if (!wrap) return;
+
+  // Group by path prefix: /api/v1/users/123 -> /api/v1/users/*
+  const groups = new Map();
+  filtered.forEach(ep => {
+    const pattern = _pathPattern(ep.path || ep.url || '');
+    if (!groups.has(pattern)) groups.set(pattern, []);
+    groups.get(pattern).push(ep);
+  });
+
+  // Sort groups by count desc, then alpha
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+
+  const total = sorted.length;
+  const perPage = 30;
+  const totalPages = Math.ceil(total / perPage) || 1;
+  window._urlPage = Math.max(1, Math.min(window._urlPage, totalPages));
+  const start = (window._urlPage - 1) * perPage;
+  const page = sorted.slice(start, start + perPage);
+
+  const pinfo = document.getElementById('url-pinfo');
+  if (pinfo) pinfo.textContent = total ? `${start + 1}\u2013${Math.min(start + perPage, total)} of ${total} path groups` : '0 results';
+
+  if (!total) {
+    wrap.innerHTML = '<div class="url-table-wrap"><table class="url-table"><tbody><tr><td colspan="1" style="text-align:center;padding:28px;color:var(--text3)">No endpoints match filters</td></tr></tbody></table></div>';
+    const pbtns = document.getElementById('url-pbtns');
+    if (pbtns) pbtns.innerHTML = '';
+    return;
+  }
+
+  wrap.innerHTML = page.map(([pattern, eps]) => {
+    const sevs = {};
+    const methods = new Set();
+    eps.forEach(ep => {
+      sevs[ep.severity] = (sevs[ep.severity] || 0) + 1;
+      methods.add(ep.method);
+    });
+    const topSev = Object.keys(sevs).sort((a,b) => ({critical:0,high:1,medium:2,low:3,info:4}[a]||4)-({critical:0,high:1,medium:2,low:3,info:4}[b]||4))[0] || 'info';
+    const sc = SEV_CFG[topSev] || SEV_CFG.info;
+
+    return `<div class="ep-group">
+      <div class="ep-group-hdr" onclick="this.parentElement.classList.toggle('open')">
+        <span class="ep-group-chevron">\u25B6</span>
+        <span class="ep-group-pattern">${esc(pattern)}</span>
+        <span class="source-chip" style="font-size:.6rem;margin-left:8px">${eps.length} endpoint${eps.length>1?'s':''}</span>
+        <span class="url-risk-badge" style="background:${sc.bg};color:${sc.color};font-weight:700;margin-left:auto">${sc.labelShort}</span>
+        <span style="font-size:.62rem;color:var(--text3);margin-left:8px">${[...methods].join(', ')}</span>
+      </div>
+      <div class="ep-group-body">
+        ${eps.slice(0, 12).map(ep => {
+          const displayUrl = ep.url.length > 100 ? ep.url.substring(0, 97) + '\u2026' : ep.url;
+          return `<div class="ep-group-item">
+            <span class="js-method-badge" style="font-size:.58rem;padding:1px 5px;background:${(_methodColor(ep.method))}12;color:${_methodColor(ep.method)};border:1px solid ${_methodColor(ep.method)}25">${esc(ep.method)}</span>${ep.auth && ep.auth !== 'unknown' && ep.auth !== 'none_detected' ? `<span class="method-badge" style="background:var(--border);color:var(--teal);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:3px" title="Auth: ${esc(ep.auth)}">${ep.auth === 'bearer' ? '🔑JWT' : ep.auth === 'api_key_header' ? '🔑API' : ep.auth === 'basic' ? '🔒Basic' : ep.auth === 'oauth2' ? '🔑OAuth2' : ep.auth === 'cookie_session' ? '🍪Session' : esc(ep.auth)}</span>` : ep.auth === 'none_detected' ? `<span class="method-badge" style="background:rgba(239,68,68,0.15);color:var(--red);font-size:.58rem;padding:1px 5px;border-radius:3px;margin-left:3px" title="No auth detected">⚠ NOAUTH</span>` : ''}
+            <a href="${escAttr(ep.url)}" target="_blank" rel="noopener" class="url-cell-link" style="font-size:.68rem" title="${esc(ep.url)}">${esc(displayUrl)}</a>
+            <button class="url-copy-btn" style="margin-left:auto" onclick="copyToClipboard('${escAttr(ep.url).replace(/'/g,"\\'")}');event.stopPropagation()">\uD83D\uDCCB</button>
+          </div>`;
+        }).join('')}
+        ${eps.length > 12 ? `<div style="padding:4px 10px;font-size:.62rem;color:var(--text3)">+ ${eps.length - 12} more endpoints in this group</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Pagination
+  const pbtns = document.getElementById('url-pbtns');
+  if (pbtns && totalPages > 1) {
+    let btns = '';
+    for (let i = Math.max(1, window._urlPage - 2); i <= Math.min(totalPages, window._urlPage + 2); i++)
+      btns += `<button class="pb${i === window._urlPage ? ' active' : ''}" onclick="window._urlPage=${i};filterUrlsTable()">${i}</button>`;
+    if (window._urlPage > 1) btns = `<button class="pb" onclick="window._urlPage--;filterUrlsTable()">\u2190</button>` + btns;
+    if (window._urlPage < totalPages) btns += `<button class="pb" onclick="window._urlPage++;filterUrlsTable()">\u2192</button>`;
+    pbtns.innerHTML = btns;
+  } else if (pbtns) { pbtns.innerHTML = ''; }
+}
+
+function _pathPattern(pathOrUrl) {
+  let p = String(pathOrUrl || '');
+  // Strip scheme + host
+  const m = p.match(/https?:\/\/[^\/]+(\/.*)/i);
+  if (m) p = m[1];
+  if (!p) p = '/';
+  // Normalize numeric/hex IDs to *
+  let pattern = p.replace(/\/\d+(?=[\/?#]|$)/g, '/*')
+                .replace(/\/[0-9a-f]{24,}(?=[\/?#]|$)/gi, '/*')
+                .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=[\/?#]|$)/gi, '/*')
+                .replace(/\/[^\/]*\.(html?|php|asp|aspx|jsp)(?=[?#]|$)/i, '/*.$1');
+  // Remove query string
+  const qi = pattern.indexOf('?');
+  if (qi !== -1) pattern = pattern.substring(0, qi);
+  return pattern || '/';
+}
+
+function _extractQuery(url) {
+  const qi = url.indexOf('?');
+  if (qi === -1) return '';
+  try {
+    const params = new URL(url).searchParams;
+    const keys = [];
+    params.forEach((v, k) => keys.push(k + (v ? '=' + v.substring(0, 80) : '')));
+    return keys.join('&').substring(0, 300) || url.substring(qi + 1).substring(0, 300);
+  } catch (e) {
+    return url.substring(qi + 1).substring(0, 300);
+  }
+}
+
+function toggleEpRow(tr, idx) {
+  const detail = tr.parentElement.querySelector('.ep-detail-' + idx);
+  if (!detail) return;
+  if (detail.style.display === 'none' || !detail.style.display) {
+    // Close all others
+    tr.parentElement.querySelectorAll('.ep-detail').forEach(d => d.style.display = 'none');
+    tr.parentElement.querySelectorAll('.ep-row').forEach(r => r.classList.remove('expanded'));
+    detail.style.display = '';
+    tr.classList.add('expanded');
+    const hint = tr.querySelector('.ep-expand-hint');
+    if (hint) hint.textContent = '\u25BC Collapse';
+  } else {
+    detail.style.display = 'none';
+    tr.classList.remove('expanded');
+    const hint = tr.querySelector('.ep-expand-hint');
+    if (hint) hint.textContent = '\u25B6 Expand';
+  }
+}
+
+// ── Clipboard helpers ──────────────────────────────────────────────────────
+
+function copyToClipboard(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).catch(() => _fallbackCopy(text));
+  } else {
+    _fallbackCopy(text);
+  }
+}
+function _fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+}
+
+function copyUrlsToClipboard() {
+  if (!window._urlData) return;
+  const filtered = getFilteredUrls();
+  copyToClipboard(filtered.map(u => u.url).join('\n'));
+}
+
+function getFilteredUrls() {
+  if (!window._urlData) return [];
+  const search = (document.getElementById('url-search')?.value || '').toLowerCase();
+  const typeFilter = document.getElementById('url-type-filter')?.value || '';
+  const methodFilter = document.getElementById('url-method-filter')?.value || '';
+  const sourceFilter = document.getElementById('url-source-filter')?.value || '';
+  const activeSev = window._urlActiveSev || '';
+  const activeMethod = window._urlActiveMethod || '';
+  return window._urlData.filter(u => {
+    if (search && !`${u.url} ${u.host} ${u.path} ${u.type} ${u.method}`.toLowerCase().includes(search)) return false;
+    if (typeFilter && u.type !== typeFilter) return false;
+    if (sourceFilter) {
+      const srcMap = { 'Wayback': 'wayback', 'URLFinder': 'urlfinder', 'JS Extraction': 'js', 'API Panels': 'nuclei' };
+      if ((srcMap[sourceFilter] || sourceFilter.toLowerCase()) !== u.source) return false;
+    }
+    if (methodFilter && u.method.toUpperCase() !== methodFilter.toUpperCase()) return false;
+    if (activeSev && u.severity !== activeSev) return false;
+    if (activeMethod && u.method.toUpperCase() !== activeMethod.toUpperCase()) return false;
+    return true;
+  });
+}
+
+// ── JS endpoint classification helpers ───────────────────────────────────────
+function classifyEndpoint(url, method) {
+  const u = String(url || '').toLowerCase();
+  if (/\/(auth|login|signin|oauth|sso|token|session)/.test(u)) return 'Auth';
+  if (/\/(admin|manage|dashboard|panel|console|control)/.test(u)) return 'Admin';
+  if (/\b(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(u)) return 'Internal IP';
+  if (/\/(api|graphql|rest|webhook|callback|endpoint)\//.test(u)) return 'API';
+  if (/(\.php|\.asp|\.aspx|\.jsp|\.do|\.action|\.cfm)/.test(u)) return 'Dynamic';
+  if (/\/(upload|file|media|asset|static|dist|build)\//.test(u)) return 'Static';
+  if (/^wss?:\/\//.test(u)) return 'WebSocket';
+  if (/(config|setup|install|debug|health|status|ping|info)/.test(u)) return 'Config';
+  const m = String(method || 'GET').toUpperCase();
+  if (m === 'POST' || m === 'PUT' || m === 'DELETE' || m === 'PATCH') return 'Mutation';
+  return 'Route';
+}
+
+function _methodColor(m) {
+  return { GET: '#4ade80', POST: '#fb923c', PUT: '#60a5fa', DELETE: '#fb7185', PATCH: '#a78bfa' }[m] || 'var(--text2)';
+}
+
+function maskSecret(val) {
+  const s = String(val || '');
+  if (s.length <= 8) return '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022';
+  return s.substring(0, 4) + '\u2022\u2022\u2022\u2022' + s.substring(s.length - 4);
+}
+
+function exportEndpointsCSV() {
+  if (!window._urlData) return;
+  const rows = [['Method', 'URL', 'Type', 'Host', 'Path', 'Source', 'Severity']];
+  window._urlData.forEach(ep => rows.push([ep.method, ep.url, ep.type, ep.host, ep.path || '', ep.source, ep.severity]));
+  const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g, "'") + '"').join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = 'endpoints_inventory.csv';
+  a.click();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BRAND DOMAINS TAB
+// ═══════════════════════════════════════════════════════════════════════
+function renderTyposquatTab(co) {
+  const el = document.getElementById("tab-typosquat");
+  if (!el) return;
+
+  const td = co.typosquat_data || {};
+  const registered = td.registered || [];
+
+  // Partition by status
+  const critical      = registered.filter(r => r.risk === 'critical');
+  const broker        = registered.filter(r => r.status === 'broker_listed' && r.risk !== 'critical');
+  const active        = registered.filter(r => r.status === 'active' && r.risk !== 'critical');
+  const noip          = registered.filter(r => r.status === 'registered_no_ip');
+  const parked        = registered.filter(r => r.status === 'parked');
+  const companyOwned  = registered.filter(r => r.status === 'company_owned');
+  const opensquat     = (co.opensquat_alerts || []);
+
+  // Update group badge
+  const gc = document.getElementById('gc-brandgroup');
+  if (gc) {
+    const atRisk = critical.length + broker.length + active.length;
+    gc.textContent = atRisk > 0 ? atRisk : '';
+    gc.style.background = critical.length > 0 ? 'var(--purple)' : atRisk > 0 ? 'var(--red)' : '';
+  }
+
+  const RISK_COLOR = {
+    critical: 'var(--purple)', high: 'var(--red)',
+    medium: 'var(--orange)',   low:  'var(--text3)'
+  };
+  const STATUS_LABEL = {
+    broker_listed:         { label: 'À VENDA',       color: 'var(--red)',    icon: '🏷️' },
+    active:                { label: 'ATIVO',          color: 'var(--orange)', icon: '⚠️' },
+    registered_no_ip:      { label: 'REGISTRADO',     color: 'var(--yellow)', icon: '📋' },
+    parked:                { label: 'PARKED',          color: 'var(--text3)', icon: '🅿️' },
+    registered_unreachable:{ label: 'SEM RESPOSTA',   color: 'var(--text3)', icon: '❓' },
+    company_owned:         { label: 'PRÓPRIO',         color: 'var(--green)', icon: '✅' },
+  };
+
+  const renderRow = r => {
+    const st  = STATUS_LABEL[r.status] || { label: r.status || '?', color: 'var(--text3)', icon: '❓' };
+    const rc  = RISK_COLOR[r.risk] || 'var(--text3)';
+    const ips = (r.ips || []).join(', ') || '—';
+
+    // Extra intel badges
+    const badges = [];
+    if (r.has_mx)
+      badges.push(`<span style="background:#b91c1c22;color:#f87171;border:1px solid #f8717144;border-radius:3px;padding:1px 5px;font-size:.6rem;font-weight:700">📧 MX</span>`);
+    if ((r.ssl || {}).brand_in_cert)
+      badges.push(`<span style="background:#7c3aed22;color:#a78bfa;border:1px solid #a78bfa44;border-radius:3px;padding:1px 5px;font-size:.6rem;font-weight:700">🔒 SSL+BRAND</span>`);
+    if ((r.ssl || {}).cn && !(r.ssl || {}).brand_in_cert)
+      badges.push(`<span style="background:#1e3a5f22;color:#60a5fa;border:1px solid #60a5fa33;border-radius:3px;padding:1px 5px;font-size:.6rem">🔒 SSL</span>`);
+    if (r.mx_records && r.mx_records.length)
+      badges.push(`<span style="font-size:.6rem;color:var(--text3)" title="${escAttr(r.mx_records.join(', '))}">${r.mx_records[0]}</span>`);
+
+    const badgeHtml  = badges.length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${badges.join('')}</div>` : '';
+    const redirect   = r.redirect_to ? `<div style="font-size:.63rem;color:var(--text3);margin-top:2px">↳ ${esc(r.redirect_to)}</div>` : '';
+    const whoisInfo  = (r.org || r.email)
+      ? `<div style="font-size:.61rem;color:var(--text3);margin-top:2px">Reg: ${esc(r.org || r.email || '')}</div>` : '';
+    const sslDetail  = (r.ssl || {}).cn
+      ? `<div style="font-size:.61rem;color:var(--text3);margin-top:1px">CN: ${esc(r.ssl.cn)}</div>` : '';
+
+    const riskLabel  = r.risk === 'critical'
+      ? `<span style="color:var(--purple);font-size:.65rem;font-weight:800">CRÍTICO</span>`
+      : `<span style="color:${rc};font-size:.65rem;font-weight:700;text-transform:uppercase">${r.risk||'—'}</span>`;
+
+    return `<div class="typo-row" style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px 14px;align-items:start;padding:9px 12px;border-bottom:1px solid var(--border2);font-size:.74rem">
+      <div>
+        <a href="https://${escAttr(r.domain)}" target="_blank" rel="noopener"
+           style="color:var(--teal);font-family:monospace;font-weight:600">${esc(r.domain)}</a>
+        ${redirect}
+        ${ips !== '—' ? `<div style="font-size:.63rem;color:var(--text3);margin-top:1px">${esc(ips)}</div>` : ''}
+        ${whoisInfo}${sslDetail}${badgeHtml}
+      </div>
+      <div style="white-space:nowrap;padding-top:2px;color:${st.color};font-size:.65rem;font-weight:700">${st.icon} ${st.label}</div>
+      <div style="padding-top:2px">${riskLabel}</div>
+      <div style="padding-top:2px"><a href="https://who.is/whois/${escAttr(r.domain)}" target="_blank" rel="noopener"
+              style="font-size:.63rem;color:var(--text3);text-decoration:none">WHOIS ↗</a></div>
+    </div>`;
+  };
+
+  const section = (title, icon, color, items, emptyMsg, collapse=false) => {
+    if (!items.length && collapse) return '';
+    if (!items.length) return `<div style="padding:10px 14px;color:var(--text3);font-size:.72rem">${emptyMsg}</div>`;
+    return `<div class="section-shell" style="margin-bottom:14px">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker" style="color:${color}">${icon} ${title}</div>
+          <div class="section-title">${items.length} domínio${items.length>1?'s':''}</div>
+        </div>
+      </div>
+      ${items.map(renderRow).join('')}
+    </div>`;
+  };
+
+  // opensquat recent alerts
+  const opensquatHtml = opensquat.length ? `
+    <div class="section-shell" style="margin-bottom:14px">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker" style="color:var(--teal)">📡 CT Log — Novos Registros (opensquat)</div>
+          <div class="section-title">${opensquat.length} alerta${opensquat.length>1?'s':''} histórico${opensquat.length>1?'s':''}</div>
+        </div>
+      </div>
+      ${opensquat.slice(-5).reverse().map(a=>`
+        <div style="padding:7px 12px;border-bottom:1px solid var(--border2);font-size:.72rem;display:flex;gap:12px;align-items:center">
+          <span style="color:var(--text3);font-size:.64rem;white-space:nowrap">${(a.date||'').slice(0,10)}</span>
+          <span style="color:var(--orange);font-weight:700">+${a.new_count} domínios</span>
+          <span style="color:var(--text3);font-size:.65rem">${(a.domains||[]).slice(0,4).join(', ')}${a.domains.length>4?' …':''}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  const scanMeta = td.scanned_at
+    ? `<span style="color:var(--text3);font-size:.68rem">Verificados: ${td.total_checked||0} · Registrados: ${td.registered_count||0} · Scan: ${(td.scanned_at||'').slice(0,10)||'?'}</span>`
+    : `<span style="color:var(--text3);font-size:.68rem">Sem dados — rode o pipeline primeiro.</span>`;
+
+  el.innerHTML = `
+    <div style="padding:18px 20px;max-width:1100px;margin:0 auto">
+      <div style="display:flex;align-items:baseline;gap:14px;margin-bottom:18px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--text1)">Brand Domain Exposure</div>
+          <div style="font-size:.74rem;color:var(--text3);margin-top:3px">Domínios que deveriam ser da empresa mas não são — risco de phishing e brand confusion.</div>
+        </div>
+        <div style="margin-left:auto">${scanMeta}</div>
+      </div>
+
+      <!-- Stat row -->
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap">
+        ${[
+          ['Crítico (MX+SSL)', critical.length, 'var(--purple)'],
+          ['À Venda',          broker.length,   'var(--red)'],
+          ['Ativos',           active.length,   'var(--orange)'],
+          ['Registrados',      noip.length,     'var(--yellow)'],
+          ['Parked',           parked.length,   'var(--text3)'],
+          ['Próprios',         companyOwned.length,'var(--green)'],
+        ].map(([label,count,color])=>`
+          <div class="stat-card" style="min-width:100px;text-align:center">
+            <div class="stat-value" style="color:${color}">${count}</div>
+            <div class="stat-label">${label}</div>
+          </div>`).join('')}
+      </div>
+
+      ${!registered.length ? `
+        <div class="empty-state" style="padding:40px">
+          <div class="empty-state-copy">Nenhum domínio de marca encontrado ainda.<br>
+          Rode o módulo Typosquat no pipeline.</div>
+        </div>` : `
+        ${section('CRÍTICO — Phishing Kit Completo (MX e/ou SSL+Brand)', '🚨', 'var(--purple)', critical, '', true)}
+        ${section('À Venda em Broker',   '🏷️', 'var(--red)',    broker,       '(nenhum)')}
+        ${section('Ativo — Terceiro',    '⚠️', 'var(--orange)', active,       '(nenhum)')}
+        ${section('Registrado sem IP',   '📋', 'var(--yellow)', noip,         '(nenhum)')}
+        ${section('Parked',              '🅿️', 'var(--text3)',  parked,       '', true)}
+        ${section('Próprios da Empresa', '✅', 'var(--green)',  companyOwned, '', true)}
+      `}
+
+      ${opensquatHtml}
+
+      <div style="margin-top:16px;padding:12px 14px;background:var(--bg3);border-radius:6px;font-size:.71rem;color:var(--text3)">
+        <strong style="color:var(--text2)">O que fazer:</strong>
+        <strong style="color:var(--purple)">Crítico</strong> = domínio ativo com MX (pode enviar e-mail como a marca) e/ou certificado SSL com nome da marca — remediar imediatamente (takedown ou registro).
+        <strong style="color:var(--red)">À Venda</strong> = comprar antes do atacante.
+        <strong style="color:var(--orange)">Ativo</strong> = monitorar e solicitar takedown via registrar.
+        CT Log via opensquat detecta novos registros diariamente (cron 06:00).
+      </div>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  INFRA TAB (auto-generated from parser + static for Porto Seguro demo)
+// ════════════════════════════════════════════════════════════════════════
+function renderInfraTab(co) {
+  const el = document.getElementById("tab-infra");
+  const shell = (cards) => `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Infrastructure</div>
+          <div class="section-title">Resolved infrastructure, providers and edge services</div>
+          <div class="section-sub">Infrastructure cards aggregate ASN, network, provider and service clues gathered during the scan.</div>
+        </div>
+      </div>
+      <div class="infra-grid">${cards}</div>
+    </div>`;
+
+  if (co.infra && co.infra.length) {
+    el.innerHTML = shell(co.infra.map(card =>
+      _infraCard(card.title, (card.rows || []).map(r => _infraRow(r.key, esc(r.val), r.cls || "")))
+    ).join(""));
+    return;
+  }
+
+  if (co.id === "portoseguro") {
+    el.innerHTML = shell(`
+      ${_infraCard("☁ Azure AD / Microsoft Identity", [
+        _infraRow("Tenant ID", "ed7958eb-216a-4854-a42e-3c7127272021", "hi"),
+        _infraRow("Tenant Domain", "portoseguro.com.br"),
+        _infraRow("Namespace", "Managed (Azure AD)"),
+        _infraRow("App: Pagamentos", "f7803731-7830-4239-a811-fee25df9883a", "hi"),
+        _infraRow("App: SailPoint", "e488b780-0d92-4e92-8ea4-8b24849c0800", "hi"),
+        _infraRow("OAuth Token URL", "login.windows.net/ed7958eb.../oauth2/token", ""),
+      ])}
+      ${_infraCard("🔐 IAM / Identity Platforms", [
+        _infraRow("SailPoint Tenant", "portoseguro.login.sailpoint.com", "hi"),
+        _infraRow("SailPoint API", "portoseguro.api.identitynow.com"),
+        _infraRow("Portal Externo", "portaldeacessos.portoseguro.com.br"),
+        _infraRow("Formato usuário", "f0123456 (f + 7 dígitos)", "hi"),
+        _infraRow("Cognito PRD", "aem-prd.auth.ca-central-1.amazoncognito.com"),
+        _infraRow("Cognito HML", "aem-hml.auth.ca-central-1.amazoncognito.com"),
+        _infraRow("Citrix Gateway 1", "ho.portoseguro.com.br"),
+        _infraRow("Citrix Gateway 2", "ho.ctx.portoseguro.com.br"),
+      ])}
+      ${_infraCard("🔌 API Gateways", [
+        _infraRow("Sensedia PRD", "api-portoseg.sensedia.com", "hi"),
+        _infraRow("Sensedia HML", "apihlg-portoseg.sensedia.com"),
+        _infraRow("Sensedia DEV", "apidev-portoseg.sensedia.com"),
+        _infraRow("MuleSoft HML", "api.bap-hml.portoseguro.com.br"),
+        _infraRow("AWS GW 1", "bxn9o4w0pd.execute-api.ca-central-1.amazonaws.com", "hi"),
+        _infraRow("AWS GW 2", "47zimjues7.execute-api.us-west-2.amazonaws.com", "hi"),
+      ])}
+      ${_infraCard("🌐 WAF / CDN", [
+        _infraRow("Imperva IP 1", "45.223.45.75 (128 hosts)", "hi"),
+        _infraRow("Imperva IP 2", "45.223.41.75 (2 hosts)"),
+        _infraRow("Cloudflare", "~16 hosts"),
+        _infraRow("AWS CloudFront", "~41 hosts"),
+        _infraRow("Diretos (sem WAF)", "~56 hosts expostos", "warn"),
+      ])}
+      ${_infraCard("🏢 Internal Applications", [
+        _infraRow("MISP", "misp.portoseguro.com.br (131.161.97.x)", "warn"),
+        _infraRow("Tableau", "tableau.portoseguro.com.br (2023.1.7)", "warn"),
+        _infraRow("Orquestrador Pgmt", "portal.meiosdepagamento.portoseguro.com.br"),
+        _infraRow("Backoffice Loja", "psstore.portoseguro.com.br"),
+        _infraRow("Portal Prestador DEV", "dev.saude.portoseguro.com.br", "hi"),
+        _infraRow("API Marketplace", "developers.portoseguro.com.br (Axway)"),
+      ])}
+      ${_infraCard("🗺 Internal Network (DNS Leak)", [
+        _infraRow("Range principal", "131.161.96.x / 131.161.97.x", "hi"),
+        _infraRow("NAC Server 1", "nac11dc00-tlf → 172.28.1.172"),
+        _infraRow("NAC Server 2", "nac12db02-tlf → 172.28.1.173"),
+        _infraRow("ALM Server", "portoalm → 172.27.73.27"),
+        _infraRow("Hostname CSP leak", "nt50388.portoseguro.brasil", "warn"),
+        _infraRow("SBC (VoIP)", "sbc.portoseguro.com.br → 131.161.97.102"),
+      ])}
+    `);
+    return;
+  }
+
+  const cidrs = co.cidr_ranges || [];
+  const dns   = co.dns_data   || {};
+  const waf   = co.waf_coverage || {};
+  const hosts = co.hosts || [];
+  const cloudAssets = co.cloud_assets || {};
+  const cloudHosts = hosts.filter(h => h.cloud_provider).reduce((acc, h) => {
+    const p = h.cloud_provider;
+    if (!acc[p]) acc[p] = [];
+    acc[p].push(h.host);
+    return acc;
+  }, {});
+  const hasAny = cidrs.length ||
+    (co.asn_numbers || []).length ||
+    Object.keys(dns).length ||
+    Object.keys(waf).length ||
+    Object.keys(cloudAssets).length ||
+    Object.keys(cloudHosts).length;
+
+  if (!hasAny) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🧱</div><div class="empty-state-title">No infrastructure data yet</div><div class="empty-state-copy">Run a pipeline scan to populate ASN, DNS, WAF and leak-related infrastructure details.</div></div>`;
+    return;
+  }
+
+  let cards = '';
+
+  // ASN / CIDR card
+  if (cidrs.length || co.asn_numbers?.length) {
+    const asnNums = (co.asn_numbers || []).join(', ') || '—';
+    const cidrRows = [
+      _infraRow("ASN(s)", esc(asnNums)),
+      _infraRow("CIDRs", `${cidrs.length} ranges`),
+      ...cidrs.slice(0, 12).map(c => _infraRow("CIDR", esc(c), "hi")),
+    ];
+    cards += _infraCard("🌐 IP Ranges / ASN", cidrRows);
+  }
+
+  if (Object.keys(waf).length) {
+    const wafRows = Object.entries(waf).map(([k,v]) => _infraRow(k, `${v} hosts`));
+    const unprotected = hosts.length - Object.values(waf).reduce((a,b)=>a+b,0);
+    cards += _infraCard("🛡 WAF / CDN Coverage", [
+      ...wafRows,
+      ...(unprotected > 0 ? [_infraRow("No WAF", `${unprotected} hosts exposed`, "warn")] : []),
+    ]);
+  }
+
+  if (Object.keys(cloudAssets).length || Object.keys(cloudHosts).length) {
+    const cloudRows = [
+      ...Object.entries(cloudAssets).map(([k,v]) => _infraRow(k, `${v} hosts`, "hi")),
+      ...Object.entries(cloudHosts).map(([k,v]) => _infraRow(k, `${v.length} hosts`, "hi")),
+    ];
+    cards += _infraCard("☁ Cloud Providers", cloudRows);
+  }
+
+  if (Object.keys(dns).length) {
+    const mx = (dns.MX||[]).map(r=>r.value||r).join(', ') || '—';
+    const ns = (dns.NS||[]).slice(0,4).map(r=>r.value||r).join(', ') || '—';
+    const spf = (dns.TXT||[]).find(r=>(r.value||r).startsWith('v=spf'));
+    const dmarc = (dns.TXT||[]).find(r=>(r.value||r).startsWith('v=DMARC'));
+    cards += `<div class="ic"><div class="ic-title">🔎 DNS Records</div>
+      <div class="ic-row"><span class="ic-k">MX</span><span class="ic-v">${esc(mx)}</span></div>
+      <div class="ic-row"><span class="ic-k">NS</span><span class="ic-v">${esc(ns)}</span></div>
+      <div class="ic-row"><span class="ic-k">SPF</span><span class="ic-v ${spf?'':'warn'}">${spf ? esc((spf.value||spf).slice(0,80)) : 'Missing'}</span></div>
+      <div class="ic-row"><span class="ic-k">DMARC</span><span class="ic-v ${dmarc?'':'warn'}">${dmarc ? esc((dmarc.value||dmarc).slice(0,80)) : 'Missing'}</span></div>
+      <div class="ic-row"><span class="ic-k">TXT records</span><span class="ic-v">${(dns.TXT||[]).length}</span></div>
+    </div>`;
+  }
+
+  el.innerHTML = shell(cards);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  FINDINGS RENDER (sevCls/sevLbl now in js/asm.js)
+// ════════════════════════════════════════════════════════════════════════
+if (typeof sevCls === 'undefined') {
+  function sevCls(s){ return {critical:"sev-c",high:"sev-h",medium:"sev-m",low:"sev-l",info:"sev-i"}[s]||"sev-i"; }
+}
+if (typeof sevLbl === 'undefined') {
+  function sevLbl(s){ return {critical:"CRITICAL",high:"HIGH",medium:"MEDIUM",low:"LOW",info:"INFO"}[s]||"INFO"; }
+}
+
+function _hashId(title, host, sev) {
+  let h = 0;
+  const s = title + '|' + host + '|' + sev;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
+  }
+  return 'f' + Math.abs(h).toString(16).padStart(8, '0');
+}
+
+function renderFC(f) {
+  // ── Normalize legacy field names ─────────────────────────────────────
+  if (!f.desc && f.description) f.desc = f.description;
+  if (!f.title && f.name) f.title = f.name;
+  if (!f.id) f.id = _hashId(f.title || '', f.host || '', f.severity || '');
+
+  // Extract confidence from description, e.g. "Confidence: [PROBABLE]"
+  const confMatch = (f.desc||"").match(/Confidence:\s*\[([^\]]+)\]/i);
+  const conf = confMatch ? confMatch[1] : "";
+  // Clean description — strip trailing truncation artifacts
+  const descClean = (f.desc||"").replace(/\s+$/, "");
+
+  // Module badge color
+  const modColor = {
+    baddns:"var(--orange)", baddns_direct:"var(--orange)", baddns_zone:"var(--orange)",
+    baddns_mx:"var(--orange)", baddns_txt:"var(--orange)",
+    nuclei:"var(--red)", secretsdb:"var(--red)",
+    httpx:"var(--blue)", wappalyzer:"var(--blue)",
+    bucket_finder:"var(--purple)", bucket_amazon:"var(--purple)",
+    headers:"var(--blue)", cve_scan:"var(--red)", github_dork:"var(--red)",
+  };
+  const mc = modColor[f.module] || "var(--text3)";
+
+  // Tags — skip noisy internal bbot tags
+  const skipTags = new Set(["affiliate","target","in-scope","out-of-scope"]);
+  const tags = (f.tags||[]).filter(t=>!skipTags.has(t) && !t.startsWith("scope-") && !t.startsWith("distance-"));
+
+  // Type-specific detail blocks
+  const typeExtra = (() => {
+    if (f.type === "cve") {
+      const score    = f.score != null ? f.score : null;
+      const epssVal  = f.epss  != null ? f.epss  : null;
+      const kevFlag  = !!f.kev;
+      const affected = (f.affected_hosts || []);
+      const scoreC   = score >= 9 ? "#f43f5e" : score >= 7 ? "#fb923c" : score >= 4 ? "#fbbf24" : "var(--text2)";
+      const epssC    = epssVal >= 0.5 ? "#f43f5e" : epssVal >= 0.1 ? "#fb923c" : "var(--teal)";
+      return `<div style="display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 4px;font-size:.72rem">
+        ${score != null ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:2px 8px">
+          CVSS <b style="color:${scoreC}">${score.toFixed(1)}</b></span>` : ""}
+        ${epssVal != null ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:2px 8px">
+          EPSS <b style="color:${epssC}">${(epssVal*100).toFixed(2)}%</b></span>` : ""}
+        ${kevFlag ? `<span style="background:#dc262622;border:1px solid #dc262655;border-radius:4px;padding:2px 8px;color:#f43f5e;font-weight:700">⚠ KEV</span>` : ""}
+      </div>
+      ${affected.length > 1 ? `<div style="font-size:.7rem;color:var(--text3);margin:4px 0">Affected: ${affected.map(h=>`<span style="font-family:monospace;color:var(--text2)">${esc(h)}</span>`).join(", ")}</div>` : ""}`;
+    }
+    if (f.type === "secret") {
+      const val      = f.value || "";
+      const sType    = (f.metadata && f.metadata.secret_type) ? f.metadata.secret_type : (f.metadata && f.metadata.type) ? f.metadata.type : "";
+      const srcUrl   = (f.metadata && f.metadata.source_url) ? f.metadata.source_url : f.url || "";
+      const ctx      = (f.metadata && f.metadata.context) ? f.metadata.context : "";
+      return `${val ? `<div style="margin:8px 0 4px">
+        <div style="font-size:.68rem;color:var(--text3);margin-bottom:3px">${sType ? esc(sType) : "secret"}</div>
+        <div style="font-family:monospace;font-size:.75rem;background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:6px 10px;word-break:break-all;color:#f43f5e">${esc(val)}</div>
+      </div>` : ""}
+      ${srcUrl ? `<div style="font-size:.7rem;margin-top:4px"><a class="fc-url-link" href="${esc(srcUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">📄 ${esc(srcUrl)}</a></div>` : ""}
+      ${ctx ? `<div style="font-size:.68rem;color:var(--text3);margin-top:4px;font-family:monospace;white-space:pre-wrap;word-break:break-all">${esc(ctx.slice(0,300))}</div>` : ""}`;
+    }
+    if (f.type === "header") {
+      const cookieName = f.value || "";
+      const issCookie  = f.key && f.key.startsWith("cookie-");
+      const issHeader  = f.key && f.key.startsWith("header-missing-");
+      const headerName = issHeader ? (f.key.split("-").slice(2).join("-")) : "";
+      const label = issCookie ? `Cookie: <b style="color:#f43f5e">${esc(cookieName)}</b>`
+                  : issHeader ? `Header ausente: <b style="color:#fb923c">${esc(headerName)}</b>`
+                  : esc(cookieName || "");
+      return label ? `<div style="font-size:.71rem;margin:6px 0 3px;background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:5px 9px">${label}</div>` : "";
+    }
+    if (f.type === "cors") {
+      const m = (f.desc||"").match(/Origin:\s*(\S+)\s*→\s*ACAO:\s*([^\s]+)/);
+      if (m) {
+        const origin = m[1], acao = m[2];
+        const acoColor = acao === '*' ? '#f43f5e' : '#fb923c';
+        return `<div style="font-size:.71rem;margin:6px 0 3px;display:flex;gap:10px;flex-wrap:wrap">
+          <span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:4px 8px">Origin: <b style="color:#fb923c">${esc(origin)}</b></span>
+          <span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:4px 8px">ACAO: <b style="color:${acoColor}">${esc(acao)}</b></span>
+        </div>`;
+      }
+      return "";
+    }
+    if (f.type === "brand_domain_exposure") {
+      const status = (f.metadata && f.metadata.status) || "";
+      const ips    = (f.metadata && f.metadata.ips) ? f.metadata.ips.slice(0,3) : [];
+      return `<div style="font-size:.71rem;margin:6px 0 3px;display:flex;gap:8px;flex-wrap:wrap">
+        ${status ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:3px 8px">Status: <b style="color:${status==='active'?'#f43f5e':'var(--text2)'}">${esc(status)}</b></span>` : ''}
+        ${ips.length ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-family:monospace;font-size:.67rem">${ips.map(esc).join(' · ')}</span>` : ''}
+      </div>`;
+    }
+    if (f.type === "postman_github" || f.type === "postman_secret") {
+      const repo    = (f.metadata && f.metadata.repo) || "";
+      const kind    = (f.metadata && f.metadata.kind) || "";
+      const fileUrl = f.value && f.value.startsWith("http") ? f.value : (f.url || "");
+      return `<div style="font-size:.71rem;margin:6px 0 3px">
+        ${repo ? `<div style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:4px 9px;margin-bottom:4px">📦 <b style="color:var(--accent)">${esc(repo)}</b>${kind ? ` · <span style="color:var(--text3)">${esc(kind)}</span>` : ''}</div>` : ''}
+        ${fileUrl ? `<a class="fc-url-link" href="${esc(fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:.68rem">🔗 ${esc(fileUrl.slice(0,90))}${fileUrl.length>90?'…':''}</a>` : ''}
+      </div>`;
+    }
+    if (f.type === "phishing") {
+      const m = (f.desc||"").match(/Risk score:\s*(\d+)\/100/);
+      const score = m ? parseInt(m[1]) : null;
+      const indM  = (f.desc||"").match(/Indicators:\s*([^.]+)/);
+      const indicators = indM ? indM[1].trim().split(",").map(s=>s.trim()).filter(Boolean) : [];
+      const scoreColor = score >= 70 ? '#f43f5e' : score >= 40 ? '#fb923c' : 'var(--text2)';
+      return `<div style="font-size:.71rem;margin:6px 0 3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        ${score != null ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:3px 8px">Risk: <b style="color:${scoreColor}">${score}/100</b></span>` : ''}
+        ${indicators.map(i=>`<span style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);border-radius:4px;padding:2px 7px;color:#fb923c;font-size:.67rem">${esc(i)}</span>`).join('')}
+      </div>`;
+    }
+    if (f.type === "attack_chain") {
+      const m = (f.title||"").match(/(\d+)\s+finding/);
+      const count = m ? parseInt(m[1]) : null;
+      return count ? `<div style="font-size:.71rem;margin:6px 0 3px;background:rgba(244,63,94,0.07);border:1px solid rgba(244,63,94,0.25);border-radius:4px;padding:5px 9px;color:#f43f5e">
+        ⛓ ${count} findings de alta severidade concentrados neste host
+      </div>` : "";
+    }
+    return "";
+  })();
+
+  const detailHtml = `
+    <div class="fc-desc-full">${esc(descClean)}</div>
+    ${typeExtra}
+    <div class="fc-meta-row">
+      ${f.host ? `<span class="fc-meta-kv"><span class="k">host</span><span class="v">${esc(f.host)}</span></span>` : ""}
+      ${f.module ? `<span class="fc-meta-kv"><span class="k">module</span><span class="v" style="color:${mc}">${esc(f.module)}</span></span>` : ""}
+      ${conf ? `<span class="fc-meta-kv"><span class="k">confidence</span><span class="v">${esc(conf)}</span></span>` : ""}
+      ${f.category ? `<span class="fc-meta-kv"><span class="k">category</span><span class="v">${esc(f.category)}</span></span>` : ""}
+    </div>
+    ${f.url && f.type !== "secret" ? `<div style="margin-bottom:6px"><a class="fc-url-link" href="${esc(f.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗 ${esc(f.url)}</a></div>` : ""}
+    ${f.detail ? `<div style="margin-bottom:7px;font-size:.73rem;color:var(--text2);white-space:pre-wrap;word-break:break-word;background:var(--sidebar);border:1px solid var(--border);border-radius:5px;padding:9px 10px;">${esc(f.detail)}</div>` : ""}
+    ${tags.length ? `<div class="fc-meta-row">${tags.map(t=>`<span class="fc-tag">${esc(t)}</span>`).join("")}</div>` : ""}`;
+
+  const newBadge = f.is_new
+    ? `<span style="background:#16a34a22;color:#4ade80;border:1px solid #4ade8055;border-radius:3px;padding:1px 6px;font-size:.6rem;font-weight:800;margin-left:6px">NOVO</span>`
+    : "";
+
+  return `<div class="fc" id="fc-${f.id}" onclick="toggleFC(${f.id})">
+    <div><span class="sev ${sevCls(f.severity)}">${sevLbl(f.severity)}</span></div>
+    <div class="fc-main">
+      <div class="fc-topline">
+        <div>
+          <div class="fc-title">${esc(f.title)}${newBadge}</div>
+          <div class="fc-host-row">
+            ${f.host ? `<div class="fc-host">${esc(f.host)}</div>` : ""}
+            <div class="fc-cat">${esc(f.category)}</div>
+          </div>
+        </div>
+        <button class="btn btn-secondary fp-btn" style="font-size:.62rem;padding:2px 8px;margin-left:auto;flex-shrink:0;color:var(--text3)"
+          onclick="event.stopPropagation();openFPModal(${JSON.stringify(esc(f.host||''))},${JSON.stringify(esc(f.title||''))},${JSON.stringify(esc(window._fpCurrentCid||''))})"
+          title="Mark as False Positive">✕ FP</button>
+        <button class="btn btn-secondary" style="font-size:.62rem;padding:2px 6px;flex-shrink:0;color:var(--text3);background:transparent;border:1px solid var(--border)"
+          onclick="event.stopPropagation();copyToClipboard('${escAttr(f.title||'')}: ${escAttr(f.host||'')}')" title="Copy finding">📋</button>
+      </div>
+      <div class="fc-summary">${esc(textPreview(descClean, 220) || "No description available.")}</div>
+      <div class="fc-detail" id="fd-${f.id}">${detailHtml}</div>
+    </div>
+    <div class="chevron">▼</div>
+  </div>`;
+}
+
+function toggleFC(id) {
+  const c=document.getElementById("fc-"+id), d=document.getElementById("fd-"+id);
+  if(!d) return;
+  c.classList.toggle("open"); d.classList.toggle("show");
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ADD COMPANY
+// ════════════════════════════════════════════════════════════════════════
+function openAddCompany() { document.getElementById("modal-add").classList.add("show"); }
+function closeAddCompany(){ document.getElementById("modal-add").classList.remove("show"); }
+
+let _editCoId = null;
+function openEditCompanyModal(cid) {
+  const co = allCompanies().find(c=>c.id===cid);
+  if(!co) return;
+  _editCoId = cid;
+  document.getElementById("edit-co-title").textContent  = co.name;
+  document.getElementById("edit-co-name").value         = co.name;
+  document.getElementById("edit-co-domains").value      = (co.domains||[]).join("\n");
+  document.getElementById("edit-co-error").style.display = "none";
+  document.getElementById("modal-edit-co").classList.add("show");
+}
+
+async function saveEditCompany() {
+  const name    = document.getElementById("edit-co-name").value.trim();
+  const domains = document.getElementById("edit-co-domains").value.trim()
+                    .split("\n").map(d=>d.trim().toLowerCase()).filter(Boolean);
+  const errEl   = document.getElementById("edit-co-error");
+  if(!name || !domains.length){
+    errEl.textContent = "Name and at least one domain are required.";
+    errEl.style.display = "block"; return;
+  }
+  if(!SERVER_MODE){ errEl.textContent = "Edit only available in server mode."; errEl.style.display="block"; return; }
+  try {
+    const r = await fetch(`/api/companies/${_editCoId}`, {
+      method: "PUT",
+      headers: _authHeaders(),
+      body: JSON.stringify({name, domains})
+    });
+    if(!r.ok){ const d=await r.json(); throw new Error(d.error||"Server error"); }
+    document.getElementById("modal-edit-co").classList.remove("show");
+    await reloadServerData();
+    const co = allCompanies().find(c=>c.id===_editCoId);
+    if(co) renderCompanyView(co);
+    renderSidebar();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = "block";
+  }
+}
+
+async function deleteCompany() {
+  if (!_editCoId) { alert("No company selected for deletion."); return; }
+  const co = allCompanies().find(c => c.id === _editCoId);
+  const name = co ? co.name : _editCoId;
+  if (!confirm(`Delete "${name}" and all its data? This cannot be undone.`)) return;
+  if (!SERVER_MODE) { alert("Delete only available in server mode."); return; }
+  const cidToDelete = _editCoId;
+  const btn = document.querySelector("#modal-edit-co .btn-secondary");
+  const errEl = document.getElementById("edit-co-error");
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = "Deleting..."; }
+    const r = await fetch(`/api/companies/${cidToDelete}`, {
+      method: "DELETE",
+      headers: _authHeaders(),
+    });
+    if (!r.ok) { const d = await r.json(); throw new Error(d.error || "Server error"); }
+    document.getElementById("modal-edit-co").classList.remove("show");
+    // Remove from local DATA immediately — reloadServerData only adds, never removes
+    if (DATA.companies) {
+      DATA.companies = DATA.companies.filter(c => c.id !== cidToDelete);
+    }
+    if (typeof ASM !== 'undefined' && ASM.data && ASM.data.companies) {
+      ASM.data.companies = ASM.data.companies.filter(c => c.id !== cidToDelete);
+    }
+    extraCompanies = extraCompanies.filter(c => c.id !== cidToDelete);
+    if (state.currentId === cidToDelete) state.currentId = null;
+    showPage("all");
+    renderSidebar();
+    renderAllCompanies();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.style.display = "block";
+    if (btn) { btn.disabled = false; btn.textContent = "Delete"; }
+  }
+}
+
+async function saveNewCompany() {
+  const name    = document.getElementById("modal-name").value.trim();
+  const domains = document.getElementById("modal-domains").value.trim().split("\n").map(d=>d.trim()).filter(Boolean);
+  if (!name) return;
+
+  if (SERVER_MODE) {
+    const r = await fetch("/api/companies", { method:"POST", headers: _authHeaders(),
+      body: JSON.stringify({name, domains}) });
+    const co = await r.json();
+    if (!r.ok) { alert(co.error||"Error"); return; }
+    await reloadServerData();
+  } else {
+    const id = name.toLowerCase().replace(/[^a-z0-9]/g,"-");
+    const co = { id, name, domains, color:"#00c9a7", tags:[],
+      stats:{ subdomains:0,live_hosts:0,open_ports:0,waf_protected:0,
+        findings_critical:0,findings_high:0,findings_medium:0,findings_low:0,findings_info:0 },
+      waf_coverage:{}, tech_summary:{}, findings:[], hosts:[], buckets:[] };
+    extraCompanies.push(co);
+    try { localStorage.setItem("asm_extra_companies", JSON.stringify(extraCompanies)); } catch(e) {}
+  }
+
+  closeAddCompany();
+  document.getElementById("modal-name").value = "";
+  document.getElementById("modal-domains").value = "";
+  renderSidebar();
+  renderAllCompanies();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SCAN
+// ════════════════════════════════════════════════════════════════════════
+let activeScanId  = null;
+let scanEventSrc  = null;
+let scanLineCount = 0;
+let scanStartTime = null;
+let selectedProfile = "full";
+
+// ── Module ETA tracker ───────────────────────────────────────────────────────
+const MODULE_ETA_S = {
+  // DNS core
+  dnsresolve:45,  speculate:5,    cloudcheck:10,  dnsbrute:300,
+  dnscommonsrv:20, dnsbimi:15,    dnstlsrpt:10,   dnscaa:10,
+  baddns:30,      baddns_zone:20,
+  // HTTP
+  httpx:90,       sslcert:30,     securitytxt:15, azure_realm:15,
+  // Subdomain sources
+  subfinder:60,   assetfinder:20, anubisdb:30,    certspotter:30,
+  crt:30,         crt_db:20,      digitorus:20,hackertarget:15, myssl:15,      rapiddns:15,    sitedossier:20,
+  subdomaincenter:15, urlscan:30, virustotal:20,  chaos:15,
+  leakix:15,      otx:15,         wayback:60,     shodan_dns:20,
+  shodan_idb:30,  securitytrails:20, censys_dns:20, censys_ip:20,
+  // Cloud / Buckets
+  bucket_amazon:30, bucket_firebase:20, bucket_google:20,
+  bucket_microsoft:20, bucket_digitalocean:20,
+  azure_tenant:15, asn:20,
+  // Code / Secrets
+  git:60,         git_clone:60,   github_codesearch:30, github_usersearch:20,
+  github_org:15,  github_workflows:15, trufflehog:120,
+  // Vuln
+  nuclei:600,     badsecrets:60,
+};
+
+let _scanModules  = [];
+let _moduleActive = new Set();
+let _moduleDone   = new Set();
+let _prevRunning  = new Set();
+
+// ── BBOT HUD ────────────────────────────────────────────────────────────
+const BBOT_HUD_PHASES = [
+  {id:"passive", label:"PASSIVE",  icon:"◉", color:"#00e5ff",
+   mods:["crt","certspotter","digitorus","anubisdb","hackertarget","rapiddns",
+         "sitedossier","sublist3r","bevigil","urlscan","otx","virustotal",
+         "fullhunt","shodan_dns","trickest","chaos","leakix","censys_dns",
+         "threatminer","dnscommonsrv"]},
+  {id:"github",  label:"GITHUB",   icon:"⌥", color:"#818cf8",
+   mods:["github_codesearch","github_org"]},
+  {id:"api",     label:"API INTEL",icon:"⚡", color:"#fbbf24",
+   mods:["hunterio","postman","postman_download","binaryedge","securitytrails"]},
+  {id:"cloud",   label:"CLOUD",    icon:"☁", color:"#fb923c",
+   mods:["bucket_amazon","bucket_firebase","bucket_google",
+         "bucket_microsoft","bucket_digitalocean"]},
+  {id:"vuln",    label:"VULN SCAN",icon:"⚠", color:"#f43f5e",
+   mods:["nuclei","badsecrets","baddns"]},
+  {id:"secrets", label:"SECRETS",  icon:"⬡", color:"#c084fc",
+   mods:["trufflehog","git"]},
+];
+const _MOD_PHASE = {};
+BBOT_HUD_PHASES.forEach((p,i) => p.mods.forEach(m => (_MOD_PHASE[m] = i)));
+let _modState = {};
+let _hudLogLines = [];
+let _particleAnim = null;
+
+function _stripAnsi(s) { return s.replace(/\x1b\[[0-9;]*m/g, ''); }
+
+function _detectModules(line) {
+  const plain = _stripAnsi(line);
+
+  // Setup soft-failed
+  const fail = plain.match(/Setup soft-failed for (\w+):/);
+  if (fail) { _modState[fail[1]] = 'skipped'; renderHUD(); return; }
+
+  // API is ready
+  const ready = plain.match(/\[SUCC\][^\n]*?(\w+):\s+(?:\[.*?m)?API is ready/);
+  if (ready) { _modState[ready[1]] = 'ready'; renderHUD(); return; }
+
+  // Scan completed — finalize all pending HUD phases
+  if (/completed in .+ with status FINISHED/i.test(plain)) {
+    _finalizeScanHUD();
+    return;
+  }
+
+  // Modules running
+  const runMatch = plain.match(/Modules running[^)]+\)\s+(.*)/);
+  if (runMatch) {
+    const cur = new Set();
+    (runMatch[1].match(/(\w+)\(\d+:\d+:\d+\)/g) || []).forEach(p => {
+      const name = p.match(/(\w+)\(/)[1];
+      cur.add(name);
+      _moduleActive.add(name);
+      _modState[name] = 'running';
+    });
+    _prevRunning.forEach(m => {
+      if (!cur.has(m)) { _moduleDone.add(m); _modState[m] = 'done'; }
+    });
+    _prevRunning = cur;
+    _updateETA();
+    renderHUD();
+  }
+}
+
+// Mark all HUD phase modules that never appeared in "Modules running" as done.
+// Called when scan finishes — catches modules that ran too fast to be logged.
+function _finalizeScanHUD() {
+  _prevRunning.forEach(m => { _moduleDone.add(m); _modState[m] = 'done'; });
+  _prevRunning = new Set();
+  BBOT_HUD_PHASES.forEach(phase => {
+    phase.mods.forEach(m => {
+      if (!_modState[m]) { _modState[m] = 'done'; _moduleDone.add(m); }
+    });
+  });
+  _updateETA();
+  renderHUD();
+}
+
+// ── Particle engine ──────────────────────────────────────────────────────
+function _startParticles() {
+  const canvas = document.getElementById('hud-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  function resize() { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; }
+  resize();
+  const obs = new ResizeObserver(resize);
+  obs.observe(canvas.parentElement);
+  const pts = Array.from({length:55}, () => ({
+    x: Math.random(), y: Math.random(),
+    vx: (Math.random()-.5)*.0004, vy: (Math.random()-.5)*.0004,
+    r: Math.random()*.9+.2, a: Math.random()*.35+.05,
+  }));
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pts.forEach(p => {
+      const x = p.x * canvas.width, y = p.y * canvas.height;
+      ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(0,180,255,${p.a})`; ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = 1; if (p.x > 1) p.x = 0;
+      if (p.y < 0) p.y = 1; if (p.y > 1) p.y = 0;
+    });
+    _particleAnim = requestAnimationFrame(draw);
+  }
+  if (_particleAnim) cancelAnimationFrame(_particleAnim);
+  draw();
+}
+function _stopParticles() {
+  if (_particleAnim) { cancelAnimationFrame(_particleAnim); _particleAnim = null; }
+}
+
+// ── HUD render ───────────────────────────────────────────────────────────
+function _phaseStatus(idx) {
+  const phase = BBOT_HUD_PHASES[idx];
+  const all = [...phase.mods, ...Object.keys(_modState).filter(m => _MOD_PHASE[m]===idx && !phase.mods.includes(m))];
+  if (all.some(m => _modState[m]==='running'))  return 'active';
+  if (all.some(m => _modState[m]==='done'))      return 'done';
+  return 'pending';
+}
+
+function _buildPanel(phase, idx, show) {
+  if (!show) return `<div class="hud-panel ph-hidden"></div>`;
+  const st = _phaseStatus(idx);
+  const all = [...phase.mods, ...Object.keys(_modState).filter(m => _MOD_PHASE[m]===idx && !phase.mods.includes(m))];
+
+  const running = all.filter(m => _modState[m]==='running');
+  const done    = all.filter(m => _modState[m]==='done');
+  const ready   = all.filter(m => _modState[m]==='ready');
+  const skipped = all.filter(m => _modState[m]==='skipped');
+
+  const totalActive = running.length + done.length + ready.length;
+  const pct = totalActive ? Math.round(done.length / Math.max(totalActive, 1) * 100) : 0;
+
+  // Show: running first, then recent done, then ready; max 7 per panel
+  const toShow = [...running, ...done.slice(-4), ...ready.slice(0,2)].slice(0,7);
+  const skipHtml = skipped.length
+    ? `<div class="hud-panel-mod hud-mod-skipped"><div class="hud-panel-mod-dot"></div><span>${skipped.length} sem api key</span></div>`
+    : '';
+  const modHtml = toShow.map(m => {
+    const s = _modState[m]||'pending';
+    return `<div class="hud-panel-mod hud-mod-${s}"><div class="hud-panel-mod-dot"></div><span>${m.replace(/_/g,' ')}</span></div>`;
+  }).join('');
+
+  const statsHtml = (done.length || running.length || skipped.length)
+    ? `<div style="font-size:.53rem;color:#1e3a4a;margin-top:3px;letter-spacing:.04em">${done.length} ok · ${running.length} active · ${skipped.length} skip</div>`
+    : '';
+
+  // Placeholder when no modules ran yet: distinguish "waiting" vs "all skipped"
+  const allSkipped = !toShow.length && skipped.length > 0 && skipped.length === all.length;
+  const placeholder = allSkipped
+    ? `<div class="hud-panel-mod hud-mod-skipped"><div class="hud-panel-mod-dot"></div><span>sem chaves configuradas</span></div>`
+    : `<div class="hud-panel-mod hud-mod-pending"><div class="hud-panel-mod-dot"></div><span>aguardando…</span></div>`;
+
+  return `<div class="hud-panel ${st}">
+    <div class="hud-panel-label" style="color:${phase.color}">${phase.label}</div>
+    <div class="hud-panel-prog"><div class="hud-panel-prog-bar" style="width:${pct}%;background:${phase.color}"></div></div>
+    ${modHtml || placeholder}
+    ${skipHtml}${statsHtml}
+  </div>`;
+}
+
+function renderHUD() {
+  const topEl   = document.getElementById('hud-top');
+  const botEl   = document.getElementById('hud-bot');
+  const nodesEl = document.getElementById('hud-nodes');
+  const glowEl  = document.getElementById('hud-tl-glow');
+  if (!topEl||!botEl||!nodesEl) return;
+
+  // Timeline glow (progress across phases)
+  const donePhases = BBOT_HUD_PHASES.filter((_,i)=>_phaseStatus(i)==='done').length;
+  const activePh   = BBOT_HUD_PHASES.findIndex((_,i)=>_phaseStatus(i)==='active');
+  const progress   = activePh>=0 ? (activePh+.5)/BBOT_HUD_PHASES.length : donePhases/BBOT_HUD_PHASES.length;
+  if (glowEl) glowEl.style.right = `${Math.round((1-progress)*100)}%`;
+
+  // Nodes
+  nodesEl.innerHTML = BBOT_HUD_PHASES.map((phase, idx) => {
+    const st = _phaseStatus(idx);
+    return `<div class="hud-node ${st}" style="--nc:${phase.color}" title="${phase.label}">
+      <div class="hud-node-inner">${st==='done'?'✓':phase.icon}</div>
+      <div class="hud-node-label">${phase.label}</div>
+    </div>`;
+  }).join('');
+
+  // Panels alternating top/bottom
+  topEl.innerHTML = BBOT_HUD_PHASES.map((p,i) => _buildPanel(p,i, i%2===0)).join('');
+  botEl.innerHTML = BBOT_HUD_PHASES.map((p,i) => _buildPanel(p,i, i%2===1)).join('');
+}
+
+function _fmtSec(s) {
+  if (s >= 3600) return `~${Math.ceil(s/3600)}h`;
+  if (s >= 60)   return `~${Math.ceil(s/60)}m`;
+  return `~${s}s`;
+}
+
+function _updateETA() {
+  // Total = all modules ever seen (active + done)
+  const allSeen = new Set([..._moduleActive, ..._moduleDone]);
+  const total   = allSeen.size || 1;
+  const done    = _moduleDone.size;
+  const active  = _prevRunning.size;
+  const remaining = Math.max(0, total - done);
+
+  // Sum ETA for modules not yet done
+  let remSec = 0;
+  allSeen.forEach(m => { if (!_moduleDone.has(m)) remSec += (MODULE_ETA_S[m] || 45); });
+  const elapsed = Math.floor((Date.now() - scanStartTime) / 1000);
+  // Decay: each elapsed second removes proportional estimated time
+  remSec = Math.max(0, remSec - Math.floor(elapsed * (done / Math.max(total, 1))));
+
+  const el = document.getElementById('term-modules');
+  const sb = document.getElementById('scanbar-modules');
+  if (remaining > 0) {
+    const etaStr = _fmtSec(remSec);
+    const html = `<span style="color:var(--teal)">${done}/${total}</span> modules`
+      + ` · <span style="color:var(--yellow)">${active} active</span>`
+      + ` · <span style="color:var(--text3)">${remaining} remaining · ETA ${etaStr}</span>`;
+    if (el) el.innerHTML = html;
+    if (sb) sb.textContent = `${done}/${total} · ${active} active · ETA ${etaStr}`;
+  } else {
+    if (el) el.innerHTML = `<span style="color:var(--green)">✓ ${done} modules completed</span>`;
+    if (sb) sb.textContent = `✓ ${done} modules`;
+  }
+}
+
+function selectProfile(val, el) {
+  selectedProfile = val;
+  document.querySelectorAll(".scan-profile").forEach(e=>e.classList.remove("selected"));
+  el.classList.add("selected");
+  document.getElementById("scan-flags-field").style.display = val==="custom" ? "block" : "none";
+}
+
+let selectedRateMode = "stealth";
+function selectRateMode(val, el) {
+  selectedRateMode = val;
+  document.querySelectorAll(".rate-mode-btn").forEach(e=>e.classList.remove("selected"));
+  el.classList.add("selected");
+}
+
+async function monitorNow(cid) {
+  // Run a quick pipeline scan now (stealth mode)
+  var btn = document.getElementById('monitor-now-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Starting...'; }
+  try {
+    var r = await fetch('/api/recon/' + cid + '/pipeline', {
+      method:'POST',
+      headers: {'Content-Type':'application/json', ..._authHeaders()},
+      body: JSON.stringify({mode:'stealth'})
+    });
+    var data = await r.json();
+    if (r.ok) {
+      alert('Pipeline started in stealth mode — check Pipeline HUD tab');
+      showPage('company'); selectCompany(cid); switchTab('pipeline');
+    } else {
+      alert('Error: ' + (data.error || 'Unknown'));
+    }
+  } catch(e) { alert('Failed: ' + e.message); }
+  if (btn) { btn.disabled = false; btn.textContent = '🔍 Monitor Now'; }
+}
+
+async function enableSchedule(cid, enabled) {
+  try {
+    if (enabled) {
+      var interval = prompt('Scan interval (hours):', '24');
+      if (!interval) return;
+    }
+    var r = await fetch('/api/schedule/' + cid, {
+      method:'POST',
+      headers: {'Content-Type':'application/json', ..._authHeaders()},
+      body: JSON.stringify({enabled: enabled, interval_hours: enabled ? parseInt(interval) : 24, profile: 'full'})
+    });
+    if (r.ok) {
+      alert('Schedule ' + (enabled ? 'enabled — every ' + interval + 'h' : 'disabled'));
+      loadScheduleStatus(cid);
+    }
+  } catch(e) { alert('Failed: ' + e.message); }
+}
+
+async function loadScheduleStatus(cid) {
+  var schBtn = document.getElementById("enable-schedule-btn");
+  if (!schBtn) return;
+  try {
+    var r = await fetch('/api/schedule/' + cid, {headers:_authHeaders()});
+    if (!r.ok) { schBtn.textContent = '⏱ Schedule'; return; }
+    var s = await r.json();
+    if (s && s.enabled) {
+      schBtn.textContent = '⏱ ' + (s.interval_hours||'?') + 'h On';
+      schBtn.style.color = '#4ade80';
+    } else {
+      schBtn.textContent = '⏱ Schedule Off';
+      schBtn.style.color = '';
+    }
+  } catch(e) { schBtn.textContent = '⏱ Schedule'; }
+}
+
+async function toggleSchedule(cid) {
+  var btn = document.getElementById("enable-schedule-btn");
+  if (!btn) return;
+  try {
+    var r = await fetch('/api/schedule/' + cid, {headers:_authHeaders()});
+    var s = r.ok ? await r.json() : {};
+    if (s && s.enabled) {
+      if (!confirm('Schedule is active (every ' + (s.interval_hours||'?') + 'h). Disable it?')) return;
+      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:false, interval_hours:s.interval_hours||24, profile:'deep'})});
+      btn.textContent = '⏱ Schedule Off'; btn.style.color = '';
+    } else {
+      var interval = prompt('Scan interval (hours):', '24');
+      if (!interval) return;
+      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:true, interval_hours:parseInt(interval), profile:'deep'})});
+      btn.textContent = '⏱ ' + interval + 'h On'; btn.style.color = '#4ade80';
+    }
+  } catch(e) { console.error(e); }
+}
+
+async function openScanModal(companyId) {
+  if (!SERVER_MODE) {
+    alert("Start the server to run scans:\n\npython3 server.py\n\nThen open http://localhost:5000");
+    return;
+  }
+  const co = allCompanies().find(c=>c.id===companyId);
+  if (!co) return;
+  document.getElementById("scan-modal-co").textContent = co.name;
+  document.getElementById("scan-error").style.display = "none";
+  document.getElementById("modal-scan").classList.add("show");
+  _scanCompanyId = companyId;
+
+  // Show targets with loading state while validating
+  const targetsEl = document.getElementById("scan-targets-list");
+  targetsEl.innerHTML = (co.domains||[]).map(d=>`<div>⏳ ${esc(d)}</div>`).join("");
+
+  try {
+    const r = await fetch("/api/validate-domains", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({domains: co.domains||[]})
+    });
+    const results = await r.json();
+    targetsEl.innerHTML = results.map(item => {
+      const icon = item.ok ? "✓" : "✗";
+      const color = item.ok ? "var(--teal)" : "var(--red)";
+      const detail = item.ok ? item.ip : item.error;
+      return `<div style="color:${color}">${icon} ${esc(item.domain)} <span style="color:var(--text3);font-size:.68rem">${esc(detail)}</span></div>`;
+    }).join("");
+    // Warn if any domain fails
+    const failed = results.filter(r=>!r.ok);
+    if(failed.length){
+      const errEl = document.getElementById("scan-error");
+      errEl.textContent = `Warning: ${failed.length} domain(s) did not resolve. Scan may produce limited results.`;
+      errEl.style.display = "block";
+      errEl.style.background = "rgba(251,191,36,0.1)";
+      errEl.style.color = "#fbbf24";
+      errEl.style.borderColor = "rgba(251,191,36,0.2)";
+    }
+  } catch(e) {
+    targetsEl.innerHTML = (co.domains||[]).map(d=>`<div>${esc(d)}</div>`).join("");
+  }
+}
+
+let _scanCompanyId = null;
+function closeScanModal() {
+  document.getElementById("modal-scan").classList.remove("show");
+  document.getElementById("scan-checkpoint-info").style.display = "none";
+}
+
+async function runCheckpointDiff() {
+  const btn = document.getElementById("checkpoint-btn");
+  const infoEl = document.getElementById("scan-checkpoint-info");
+  const bodyEl = document.getElementById("scan-checkpoint-body");
+  btn.disabled = true;
+  btn.textContent = "Fingerprinting…";
+  infoEl.style.display = "block";
+  bodyEl.innerHTML = `<span style="color:var(--text3)">Fetching live hosts and computing hashes… this takes ~30s</span>`;
+
+  try {
+    // Start the checkpoint scan job
+    const r = await fetch(`/api/checkpoints/${_scanCompanyId}/scan`, {method:"POST",
+      headers: _authHeaders(), body:"{}"});
+    if (!r.ok) throw await _apiErr(r);
+    const { scan_id, total_hosts } = await r.json();
+    bodyEl.innerHTML = `<span style="color:var(--text3)">Scanning ${total_hosts} hosts…</span>`;
+
+    // Poll until done
+    await new Promise((resolve, reject) => {
+      const iv = setInterval(async () => {
+        try {
+          const pr = await fetch(`/api/checkpoints/job/${scan_id}`);
+          const pd = await pr.json();
+          const pct = total_hosts > 0 ? Math.round((pd.done||0)/total_hosts*100) : 0;
+          bodyEl.innerHTML = `<span style="color:var(--text3)">Progress: ${pd.done||0}/${total_hosts} (${pct}%)</span>`;
+          if (pd.status === "done") { clearInterval(iv); resolve(pd); }
+          else if (pd.status === "error") { clearInterval(iv); reject(new Error(pd.error||"failed")); }
+        } catch(e) { clearInterval(iv); reject(e); }
+      }, 2000);
+    }).then(pd => {
+      const SEV = (n) => n > 0 ? `<span style="color:#fb923c;font-weight:600">${n}</span>` : `<span style="color:var(--text3)">${n}</span>`;
+      let html = `<div style="margin-bottom:6px">${pd.summary}</div>`;
+      if (pd.first_run) {
+        html += `<div style="color:var(--teal)">✓ First checkpoint saved — future scans will diff against this.</div>`;
+      } else {
+        if (pd.changed && pd.changed.length > 0) {
+          html += `<div style="margin-bottom:4px;color:#fb923c;font-weight:600">Changed hosts (${pd.changed.length}) — recommend re-scan:</div>`;
+          html += pd.changed.slice(0,15).map(url => {
+            const fields = (pd.change_details||{})[url] || [];
+            return `<div style="font-family:var(--mono);font-size:.7rem;padding:2px 0">
+              <span style="color:var(--text)">${url}</span>
+              <span style="color:var(--text3);margin-left:6px">[${fields.join(", ")}]</span></div>`;
+          }).join("") + (pd.changed.length > 15 ? `<div style="color:var(--text3)">…and ${pd.changed.length-15} more</div>` : "");
+        }
+        if (pd.new && pd.new.length > 0) {
+          html += `<div style="margin-top:6px;color:#4ade80;font-weight:600">New hosts (${pd.new.length}):</div>`;
+          html += pd.new.slice(0,10).map(u=>`<div style="font-family:var(--mono);font-size:.7rem">${u}</div>`).join("");
+        }
+        if ((!pd.changed || !pd.changed.length) && (!pd.new || !pd.new.length)) {
+          html += `<div style="color:#4ade80">✓ No changes detected — no re-scan needed.</div>`;
+        }
+      }
+      bodyEl.innerHTML = html;
+    });
+  } catch(e) {
+    bodyEl.innerHTML = `<span style="color:#fb7185">Error: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⧗ Check Changes";
+  }
+}
+
+async function startScan() {
+  const btn = document.getElementById("scan-start-btn");
+  const errEl = document.getElementById("scan-error");
+  errEl.style.display = "none";
+  btn.disabled = true; btn.textContent = "Starting…";
+
+  try {
+    const r = await fetch(`/api/recon/${_scanCompanyId}/pipeline`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", ..._authHeaders()},
+      body: JSON.stringify({ mode: selectedRateMode, profile: selectedProfile }),
+    });
+    let data = {};
+    if (!r.ok) {
+      if (r.status === 401) throw await _apiErr(r);
+      const t = await r.text();
+      if (r.status !== 409 || !t.includes("already running")) {
+        throw new Error(t);
+      }
+    } else {
+      data = await r.json().catch(() => ({}));
+    }
+
+    closeScanModal();
+    // Switch to the Recon tab for the company so the user sees the pipeline progress
+    switchTab("pipeline", [...document.querySelectorAll(".tab-btn")].find(b=>b.textContent.includes("Pipeline")));
+    pipelineState[_scanCompanyId] = {
+      ...(pipelineState[_scanCompanyId] || {}),
+      status: data.status || "queued",
+      job_id: data.job_id || "",
+      phase_label: "",
+      host_count: 0,
+      phases: [],
+      not_done: [],
+      started_at: new Date().toLocaleTimeString(),
+      log: data.job_id ? [{ts:new Date().toISOString(), msg:`Pipeline queued as job ${data.job_id}`}] : [],
+    };
+    renderPipelineStatus(_scanCompanyId);
+    _startPipelinePoll(_scanCompanyId);
+    _ltActiveCid = _scanCompanyId; _ltEnsurePolling();  // start live terminal globally
+  } catch(e) {
+    errEl.textContent = "Erro ao iniciar pipeline: "+e.message;
+    errEl.style.display = "block";
+  } finally {
+    btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 16 16" fill="currentColor" style="width:12px;height:12px;margin-right:4px"><path d="M3 2l10 6-10 6V2z"/></svg>Start Scan`;
+  }
+}
+
+// ── Terminal ──────────────────────────────────────────────────────────────────
+let _liveDataInterval = null;
+let _lastDataTs = 0;
+
+function stopLiveDataPolling() {
+  if (_liveDataInterval) { clearInterval(_liveDataInterval); _liveDataInterval = null; }
+  // Note: terminal polling (_ltPoll) is NOT stopped here — it runs globally
+  // while any pipeline is active, regardless of which tab the user is viewing.
+}
+
+function startLiveDataPolling(companyId) {
+  stopLiveDataPolling();
+  _lastDataTs = 0;
+  // Use 8s interval — fast enough to catch phase transitions without hammering
+  _liveDataInterval = setInterval(async () => {
+    try {
+      const r = await fetch("/api/data/ts", {headers: _authHeaders()});
+      if (!r.ok) return;
+      const { ts } = await r.json();
+      if (ts > _lastDataTs && _lastDataTs > 0) {
+        await reloadServerData();
+        if (state.currentId === companyId) {
+          const co = allCompanies().find(c => c.id === companyId);
+          if (co) renderCompanyView(co);
+        }
+        renderAllCompanies();
+        renderSidebar();
+        const liveEl = document.getElementById("term-live-badge");
+        if (liveEl) { liveEl.style.opacity = "1"; setTimeout(() => liveEl.style.opacity = "0.4", 800); }
+      }
+      _lastDataTs = ts;
+    } catch(e) {}
+  }, 8000);
+}
+
+function openTerminal(scanId, scanName, companyId) {
+  activeScanId  = scanId;
+  scanLineCount = 0;
+  scanStartTime = Date.now();
+  _scanModules  = [];
+  _moduleActive = new Set();
+  _moduleDone   = new Set();
+  _prevRunning  = new Set();
+  _modState     = {};
+  _hudLogLines  = [];
+  const modEl = document.getElementById('term-modules');
+  if (modEl) modEl.innerHTML = '';
+  const sbEl = document.getElementById('scanbar-modules');
+  if (sbEl) sbEl.textContent = '';
+
+  document.getElementById("term-title").textContent = scanName;
+  document.getElementById("term-body").innerHTML = "";
+  const logEl = document.getElementById('hud-mini-log');
+  if (logEl) logEl.innerHTML = '';
+  document.getElementById("terminal-overlay").classList.add("show");
+  document.getElementById("term-stop-btn").style.display = "";
+  document.getElementById("scanbar-name").textContent = scanName;
+
+  renderHUD();
+  _startParticles();
+  updateTermStatus("running");
+  streamScanOutput(scanId, companyId);
+  startLiveDataPolling(companyId);
+}
+
+function closeTerminal() {
+  document.getElementById("terminal-overlay").classList.remove("show");
+  document.getElementById("scan-bar").style.display = "none";
+  if (scanEventSrc) { scanEventSrc.close(); scanEventSrc = null; }
+  _stopParticles();
+}
+
+function minimizeTerminal() {
+  document.getElementById("terminal-overlay").classList.remove("show");
+  document.getElementById("scan-bar").style.display = "flex";
+}
+
+function maximizeTerminal() {
+  document.getElementById("terminal-overlay").classList.add("show");
+  document.getElementById("scan-bar").style.display = "none";
+}
+
+async function stopScan() {
+  // Stop pipeline by company ID (current viewed company)
+  var cid = state.currentId || _scanCompanyId;
+  if (!cid) return;
+  await stopPipeline(cid, {notify: true});
+  var stopBtn = document.getElementById("stop-pipeline-btn");
+  if (stopBtn) stopBtn.style.display = "none";
+}
+
+function updateTermStatus(status) {
+  const labels = {running:"Scanning…", done:"Completed", error:"Error", stopped:"Stopped"};
+  const el = document.getElementById("term-status");
+  el.innerHTML = `<span class="scan-status ${status}"><span class="scan-dot"></span>${labels[status]||status}</span>`;
+
+  const sb = document.getElementById("scanbar-status");
+  sb.className = `scan-status ${status}`;
+  sb.innerHTML = `<span class="scan-dot"></span>${labels[status]||status}`;
+
+  if (status !== "running") {
+    document.getElementById("term-stop-btn").style.display = "none";
+    const lb = document.getElementById("term-live-badge");
+    if (lb) lb.style.display = "none";
+  }
+}
+
+function streamScanOutput(scanId, companyId) {
+  if (scanEventSrc) scanEventSrc.close();
+  const src = new EventSource(`/api/scan/${scanId}/stream`);
+  scanEventSrc = src;
+
+  src.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.done) {
+      src.close(); scanEventSrc = null;
+      stopLiveDataPolling();
+      updateTermStatus(msg.status);
+      _finalizeScanHUD();
+      document.getElementById("term-stop-btn").style.display = "none";
+      // Final reload after scan completes
+      setTimeout(()=>reloadServerData().then(()=>{
+        if (state.currentId === companyId) {
+          const co = allCompanies().find(c=>c.id===companyId);
+          if (co) renderCompanyView(co);
+        }
+        renderAllCompanies(); renderSidebar();
+      }), 1500);
+      return;
+    }
+    appendTermLine(msg.line);
+    updateTermStatus(msg.status);
+  };
+
+  src.onerror = () => {
+    src.close(); scanEventSrc = null;
+    updateTermStatus("error");
+  };
+}
+
+function appendTermLine(raw) {
+  scanLineCount++;
+  const plain = _stripAnsi(raw);
+
+  // Hidden buffer for legacy references
+  const body = document.getElementById("term-body");
+  if (body) { const d = document.createElement("div"); d.textContent = plain; body.appendChild(d); }
+
+  // Action bar: update on meaningful lines only
+  const actionEl = document.getElementById('hud-action');
+  if (actionEl && plain.trim()) {
+    const isFind  = plain.includes('[FINDING]') || plain.includes('[VULNERABILITY]');
+    const isOk    = plain.includes('[✓]') || plain.includes('[SUCC]');
+    const isWarn  = plain.includes('[!]');
+    const isRun   = plain.includes('Modules running');
+    if (isFind || isOk || isWarn || isRun || plain.includes('[INFO]')) {
+      actionEl.textContent = '▶ ' + plain.replace(/\[.*?\]\s*/g,'').slice(0,140);
+      actionEl.className = 'hud-action-bar' + (isFind?'  al-find': isOk?' al-ok': isWarn?' al-active': ' al-run');
+    }
+  }
+
+  document.getElementById("term-stats").textContent = `${scanLineCount} lines`;
+  const elapsed = Math.floor((Date.now()-scanStartTime)/1000);
+  document.getElementById("term-time").textContent = `${Math.floor(elapsed/60)}m ${elapsed%60}s elapsed`;
+
+  _detectModules(raw);
+}
+
+// ── Scan Log Viewer ──────────────────────────────────────────────────────
+let _logAllLines = [];
+
+function _logLineClass(line) {
+  if (line.includes('[SUCC]') || line.includes('[✓]'))        return 'll-succ';
+  if (line.includes('[FINDING]') || line.includes('[VULNERABILITY]')) return 'll-find';
+  if (line.includes('[!]') || line.includes('[WARN]'))        return 'll-warn';
+  if (line.includes('[ERROR]'))                               return 'll-err';
+  if (line.includes('[INFO]'))                                return 'll-info';
+  if (!line.trim())                                           return 'll-dim';
+  return '';
+}
+
+async function openScanLog(cid, scanName) {
+  const overlay = document.getElementById('log-modal-overlay');
+  const bodyEl  = document.getElementById('log-modal-body');
+  const titleEl = document.getElementById('log-modal-title');
+  const metaEl  = document.getElementById('log-modal-meta');
+  const countEl = document.getElementById('log-modal-count');
+  const searchEl= document.getElementById('log-modal-search');
+  if (!overlay) return;
+  titleEl.textContent = scanName;
+  metaEl.textContent  = 'Loading…';
+  bodyEl.innerHTML    = `<div style="color:var(--text3);padding:20px">Loading scan log…</div>`;
+  searchEl.value      = '';
+  overlay.classList.add('show');
+  try {
+    const r = await fetch(`/api/scan-history/${encodeURIComponent(cid)}/${encodeURIComponent(scanName)}/log`, {headers:_authHeaders()});
+    if (!r.ok) throw new Error((await r.json()).error || r.statusText);
+    const data = await r.json();
+    _logAllLines = data.lines;
+    metaEl.textContent  = `${data.total.toLocaleString()} linhas`;
+    countEl.textContent = `${data.lines.length} exibidas de ${data.total}`;
+    _renderLogLines(_logAllLines, bodyEl);
+  } catch(e) {
+    bodyEl.innerHTML = `<div style="color:var(--red);padding:20px">Erro: ${esc(e.message)}</div>`;
+  }
+}
+
+function _renderLogLines(lines, bodyEl) {
+  const frag = document.createDocumentFragment();
+  lines.forEach(raw => {
+    const plain = _stripAnsi(raw);
+    const d = document.createElement('div');
+    d.className = 'log-line ' + _logLineClass(plain);
+    d.textContent = plain;
+    frag.appendChild(d);
+  });
+  bodyEl.innerHTML = '';
+  bodyEl.appendChild(frag);
+}
+
+function filterLogLines(q) {
+  const bodyEl  = document.getElementById('log-modal-body');
+  const countEl = document.getElementById('log-modal-count');
+  if (!bodyEl) return;
+  const filtered = q ? _logAllLines.filter(l => _stripAnsi(l).toLowerCase().includes(q.toLowerCase())) : _logAllLines;
+  countEl.textContent = `${filtered.length} de ${_logAllLines.length} linhas`;
+  // Re-render with highlight
+  const frag = document.createDocumentFragment();
+  filtered.forEach(raw => {
+    const plain = _stripAnsi(raw);
+    const d = document.createElement('div');
+    d.className = 'log-line ' + (q ? 'll-highlight' : _logLineClass(plain));
+    d.textContent = plain;
+    frag.appendChild(d);
+  });
+  bodyEl.innerHTML = '';
+  bodyEl.appendChild(frag);
+}
+
+function scrollLogTo(pos) {
+  const b = document.getElementById('log-modal-body');
+  if (!b) return;
+  b.scrollTop = pos === 'bottom' ? b.scrollHeight : 0;
+}
+
+function lineClass(line) {
+  if (line.includes("[DNS_NAME]"))        return "dns";
+  if (line.includes("[FINDING]"))         return "find";
+  if (line.includes("[VULNERABILITY]"))   return "vuln";
+  if (line.includes("[WAF]"))             return "waf";
+  if (line.includes("[TECHNOLOGY]"))      return "tech";
+  if (line.includes("[HTTP_RESPONSE]"))   return "http";
+  if (line.includes("[STORAGE_BUCKET]"))  return "warn";
+  if (line.includes("[✓]") || line.includes("[*]")) return "ok";
+  if (line.includes("[!]"))               return "warn";
+  if (line.includes("[ERROR]"))           return "err";
+  return "default";
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HELPERS (esc/wafColor/wafClass now in js/asm.js when loaded)
+// ════════════════════════════════════════════════════════════════════════
+if (typeof esc === 'undefined') {
+  function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+}
+
+if (typeof wafColor === 'undefined') {
+  function wafColor(w) {
+    if(w.includes("Imperva")) return "#a78bfa";
+    if(w.includes("Cloudflare")) return "#fb923c";
+    if(w.includes("AWS")) return "#fbbf24";
+    if(w.includes("Google")) return "#22c55e";
+    if(w.includes("Akamai")) return "#60a5fa";
+    return "#f43f5e";
+  }
+}
+
+if (typeof wafClass === 'undefined') {
+  function wafClass(w) {
+  if(w.includes("Imperva")) return "waf-Imperva";
+  if(w.includes("Cloudflare")) return "waf-Cloudflare";
+  if(w.includes("AWS")) return "waf-AWS";
+  if(w.includes("Google")) return "waf-Google";
+  if(w.includes("Firewalled")) return "waf-Firewalled";
+  if(w.includes("Akamai")) return "waf-Akamai";
+  return "waf-Direct";
+}
+} // end if wafClass undefined
+
+// ════════════════════════════════════════════════════════════════════════
+//  AUTH
+// ════════════════════════════════════════════════════════════════════════
+let authToken = "";
+try { authToken = localStorage.getItem("asmToken") || localStorage.getItem("asm_token") || ""; } catch(e) {}
+let authUser  = null;
+
+window._authHeaders = function _authHeaders() {
+  var tok = authToken || "";
+  try { tok = tok || localStorage.getItem("asmToken") || localStorage.getItem("asm_token") || ""; } catch(e) {}
+  var headers = tok ? {"X-Auth-Token": tok} : {};
+  headers["Content-Type"] = "application/json";
+  return headers;
+};
+
+async function checkAuth() {
+  if (!SERVER_MODE) return true;  // demo mode — no auth
+  try {
+    const r = await fetch("/api/auth/me", {headers: _authHeaders()});
+    if (r.status === 401) { showLoginScreen(); return false; }
+    authUser = await r.json();
+    hideLoginScreen();
+    document.getElementById("nu-name").textContent = authUser.username;
+    document.getElementById("nu-role").textContent = authUser.role.replace("_"," ");
+    if (authUser.role === "super_admin") {
+      document.getElementById("nav-admin-section").style.display = "";
+      document.getElementById("nav-admins").style.display = "";
+    }
+    return true;
+  } catch(e) { return true; }
+}
+
+function showLoginScreen() {
+  document.getElementById("login-screen").style.display = "flex";
+}
+function hideLoginScreen() {
+  document.getElementById("login-screen").style.display = "none";
+}
+
+async function doLogin() {
+  console.log("doLogin called");
+  const btn  = document.getElementById("login-btn");
+  const user = document.getElementById("login-user").value.trim();
+  const pass = document.getElementById("login-pass").value;
+  const err  = document.getElementById("login-err");
+  err.style.display = "none";
+  if (!user || !pass) { err.textContent = "Enter username and password"; err.style.display = "block"; return; }
+  btn.textContent = "Signing in…"; btn.disabled = true;
+  try {
+    const r = await fetch("/api/auth/login", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({username:user, password:pass}),
+    });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error || "Login failed"; err.style.display="block"; return; }
+    authToken = d.token;
+    try { localStorage.setItem("asmToken", authToken); } catch(e) {}
+    try { localStorage.setItem("asm_token", authToken); } catch(e) {}
+    await checkAuth();
+    await initApp();
+  } catch(e) {
+    console.error("Login error:", e);
+    err.textContent = "Connection error"; err.style.display = "block";
+  } finally {
+    btn.textContent = "Sign In"; btn.disabled = false;
+  }
+}
+
+async function doLogout() {
+  try { await fetch("/api/auth/logout", {method:"POST", headers:_authHeaders()}); } catch(e){}
+  authToken = ""; authUser = null;
+  try { localStorage.removeItem("asmToken"); } catch(e) {}
+  try { localStorage.removeItem("asm_token"); } catch(e) {}
+  showLoginScreen();
+}
+
+// Patch fetch to always include auth header
+const _origFetch = window.fetch;
+window.fetch = function(url, opts={}) {
+  if (typeof url === "string" && url.startsWith("/api/") && !url.includes("/auth/login")) {
+    opts.headers = {...(opts.headers||{}), ..._authHeaders()};
+  }
+  return _origFetch(url, opts);
+};
+
+// ════════════════════════════════════════════════════════════════════════
+//  PAGE ROUTING
+// ════════════════════════════════════════════════════════════════════════
+function showPage(page) {
+  state.page = page || "companies";
+  closeMobileNav();
+  if (page !== "company") stopCompanyPipelineSync();
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.querySelectorAll(".nav-item").forEach(b=>b.classList.remove("active"));
+  document.getElementById("crumb-sep").style.display = "none";
+  document.getElementById("crumb-current").textContent = "";
+  document.getElementById("topbar-scan-btn").style.display = "none";
+  document.getElementById("topbar-pill").innerHTML = "";
+  document.querySelectorAll(".nav-co").forEach(el => el.classList.remove("active"));
+  var stopBtn = document.getElementById("stop-pipeline-btn");
+  if (stopBtn) stopBtn.style.display = "none";
+  // Only stop the jobs table poll (nav badge poll always runs)
+  if (_jobsPoll) { clearInterval(_jobsPoll); _jobsPoll = null; }
+
+  if (page === "companies") {
+    _showCompaniesView();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('companies');
+    return;
+  } else if (page === "jobs") {
+    state.page = "jobs";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-jobs").classList.add("active");
+    _syncSidebarActive();
+    document.getElementById("crumb-sep").style.display = "";
+    document.getElementById("crumb-current").textContent = "Job Queue";
+    loadJobs();
+    _jobsPoll = setInterval(loadJobs, 5000);
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('jobs');
+  } else if (page === "tools") {
+    state.page = "tools";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-tools").classList.add("active");
+    _syncSidebarActive();
+    loadToolsStatus();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('tools');
+  } else if (page === "settings") {
+    state.page = "settings";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-settings").classList.add("active");
+    document.getElementById("nav-all").closest("nav").querySelectorAll(".nav-item").forEach(b=>{
+      if(b.getAttribute("onclick")==="showPage('settings')") b.classList.add("active");
+    });
+    loadSettings();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('settings');
+  } else if (page === "runtime") {
+    state.page = "runtime";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-runtime").classList.add("active");
+    _syncSidebarActive();
+    loadRuntimeConfig();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('runtime');
+  } else if (page === "admins") {
+    state.page = "admins";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-admins").classList.add("active");
+    _syncSidebarActive();
+    loadAdmins();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('admins');
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  JOB QUEUE
+// ════════════════════════════════════════════════════════════════════════
+function _jobStatusLabel(status) {
+  const labels = {pending:"Pendente", running:"Rodando", done:"Concluido", error:"Erro", cancelled:"Cancelado", stopped:"Parado"};
+  return labels[status] || status || "unknown";
+}
+
+function _jobStatusClass(status) {
+  if (status === "done") return "done";
+  if (status === "running") return "running";
+  if (status === "pending") return "pending";
+  if (status === "error") return "error";
+  if (status === "cancelled") return "cancelled";
+  if (status === "stopped") return "stopped";
+  return "unknown";
+}
+
+function _fmtJobTime(value) {
+  if (!value) return "—";
+  try {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString(undefined, {month:"short", day:"2-digit", hour:"2-digit", minute:"2-digit"});
+    }
+  } catch(e) {}
+  return String(value).replace("T", " ").slice(0, 16);
+}
+
+function _companyNameForJob(cid) {
+  const co = allCompanies().find(c => c.id === cid);
+  return co ? co.name : (cid || "—");
+}
+
+function _jsArg(value) {
+  return JSON.stringify(String(value || ""));
+}
+
+function _jobTypeLabel(type) {
+  const map = {
+    pipeline: "ASM Pipeline",
+    playwright_recon: "Playwright Recon",
+  };
+  return map[type] || type || "job";
+}
+
+function _jobArtifactUrl(jobId, kind) {
+  return `/api/jobs/${encodeURIComponent(jobId)}/artifact/${encodeURIComponent(kind)}`;
+}
+
+const JOBS_PAGE_SIZE = 20;
+let _jobsPage = 1;
+let _jobsTotal = 0;
+
+function _jobPrimaryTarget(job) {
+  const opts = job?.options || {};
+  const pick = [
+    job?.target,
+    opts.queue_domain,
+    opts.target_url,
+    Array.isArray(opts.domains) ? opts.domains[0] : "",
+    Array.isArray(opts.scope) ? opts.scope[0] : "",
+  ].find(Boolean);
+  const clean = String(pick || "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  return clean || "—";
+}
+
+function _jobSecondaryLabel(job) {
+  const company = _companyNameForJob(job?.company_id);
+  return `${company} · ${job?.id || ""}`;
+}
+
+function _playwrightInventorySummary(session) {
+  if (!session) return "";
+  const discovered = Array.isArray(session.discovered_hosts) ? session.discovered_hosts.length : 0;
+  const validated = Array.isArray(session.validated_hosts) ? session.validated_hosts.length : 0;
+  const pending = Array.isArray(session.pending_hosts) ? session.pending_hosts.length : 0;
+  const items = Array.isArray(session.host_inventory) ? session.host_inventory : [];
+  const chips = items.slice(0, 8).map(item => {
+    const st = item.status_code == null ? "pending" : "validated";
+    const code = item.status_code == null ? "pending" : String(item.status_code);
+    return `<code class="fg-host-chip fg-host-chip-full ${st}" title="${esc(item.source || "browser")}">${esc(item.host)} · ${esc(code)}</code>`;
+  }).join("");
+  return `
+    <div class="job-detail-grid">
+      <div><span class="job-detail-k">Discovered</span><div class="job-detail-v">${discovered}</div></div>
+      <div><span class="job-detail-k">Validated</span><div class="job-detail-v">${validated}</div></div>
+      <div><span class="job-detail-k">Pending</span><div class="job-detail-v">${pending}</div></div>
+      <div><span class="job-detail-k">Inventory</span><div class="job-detail-v">${items.length}</div></div>
+    </div>
+    ${chips ? `<div class="chip-row" style="margin-top:10px">${chips}</div>` : ""}
+  `;
+}
+
+function openJobsQueue(jobType) {
+  const typeEl = document.getElementById("jobs-type-filter");
+  if (typeEl) typeEl.value = jobType || "";
+  showPage("jobs");
+  loadJobs();
+}
+
+async function openJobCompanyPipeline(cid) {
+  if (!cid) return;
+  await selectCompany(cid);
+  await switchTab("pipeline");
+}
+
+function _jobDetailPanel() {
+  return document.getElementById("job-detail-panel");
+}
+
+function _renderJobDetailEmpty(message) {
+  const panel = _jobDetailPanel();
+  if (!panel) return;
+  panel.style.display = "block";
+  panel.innerHTML = `
+    <div class="job-detail-card">
+      <div class="job-detail-title">Job Detail</div>
+      <div class="job-detail-copy">${esc(message || "Select a job to inspect.")}</div>
+    </div>
+  `;
+}
+
+function _renderJobDetail(job, preview) {
+  const panel = _jobDetailPanel();
+  if (!panel) return;
+  const isPlaywright = job.job_type === "playwright_recon";
+  const artReport = isPlaywright && job.status === "done" ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Open Report</a>` : "";
+  const artSession = isPlaywright && job.status === "done" ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Open Session</a>` : "";
+  const opts = job.options || {};
+  const previewHtml = preview ? `
+    <div class="job-detail-grid">
+      <div><span class="job-detail-k">Pages</span><div class="job-detail-v">${preview.pages || 0}</div></div>
+      <div><span class="job-detail-k">Endpoints</span><div class="job-detail-v">${preview.endpoints || 0}</div></div>
+      <div><span class="job-detail-k">JS Chunks</span><div class="job-detail-v">${preview.js || 0}</div></div>
+      <div><span class="job-detail-k">Tech</span><div class="job-detail-v">${preview.tech || 0}</div></div>
+    </div>
+    ${preview.inventory ? _playwrightInventorySummary(preview.inventory) : ""}
+    ${preview.note ? `<div class="job-detail-copy">${esc(preview.note)}</div>` : ""}
+    ${preview.report ? `<pre class="job-detail-pre">${esc(preview.report)}</pre>` : ""}
+  ` : `<div class="job-detail-copy">No Playwright session preview available yet.</div>`;
+
+  panel.style.display = "block";
+  panel.innerHTML = `
+    <div class="job-detail-card">
+      <div class="job-detail-head">
+        <div>
+          <div class="job-detail-title">${esc(_jobTypeLabel(job.job_type))}</div>
+          <div class="job-detail-copy">${esc(job.id)} · ${esc(job.company_id || "—")} · ${esc(job.status || "—")}</div>
+        </div>
+        <div class="job-actions">${artReport}${artSession}</div>
+      </div>
+      <div class="job-detail-grid">
+        <div><span class="job-detail-k">Target</span><div class="job-detail-v">${esc(job.target || opts.target_url || "—")}</div></div>
+        <div><span class="job-detail-k">Created by</span><div class="job-detail-v">${esc(job.created_by || "—")}</div></div>
+        <div><span class="job-detail-k">Attempts</span><div class="job-detail-v">${Number(job.attempts || 0)} / ${Number(job.max_attempts || 1)}</div></div>
+        <div><span class="job-detail-k">Error</span><div class="job-detail-v">${esc(job.error || "—")}</div></div>
+      </div>
+      <div class="job-detail-copy">
+        Output: <code>${esc(opts.output || "—")}</code><br>
+        Evidence: <code>${esc(opts.evidence_dir || "—")}</code><br>
+        Scope: <code>${esc(Array.isArray(opts.scope) ? opts.scope.join(", ") : (opts.scope || "—"))}</code>
+      </div>
+      ${previewHtml}
+    </div>
+  `;
+}
+
+async function openJobDetail(jobId) {
+  const panel = _jobDetailPanel();
+  if (!panel) return;
+  panel.style.display = "block";
+  panel.innerHTML = `<div class="job-detail-card"><div class="job-detail-title">Loading job detail...</div></div>`;
+  panel.scrollIntoView({block:"start", behavior:"smooth"});
+  try {
+    const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const job = await r.json();
+    let preview = null;
+    if (job.job_type === "playwright_recon") {
+      try {
+        const sessionResp = await fetch(_jobArtifactUrl(jobId, "session"), {headers:_authHeaders()});
+        if (sessionResp.ok) {
+          const session = await sessionResp.json();
+          const reportResp = await fetch(_jobArtifactUrl(jobId, "report"), {headers:_authHeaders()});
+          let report = "";
+          if (reportResp.ok) {
+            const txt = await reportResp.text();
+            report = txt.split("\n").slice(0, 18).join("\n");
+          }
+          preview = {
+            pages: Array.isArray(session.pages) ? session.pages.length : 0,
+            endpoints: Array.isArray(session.endpoints) ? session.endpoints.length : 0,
+            js: Array.isArray(session.js) ? session.js.length : 0,
+            tech: Array.isArray(session.tech) ? session.tech.length : 0,
+            inventory: session,
+            note: Array.isArray(session.skipped_checks) && session.skipped_checks.length ? session.skipped_checks[0] : "",
+            report: report,
+          };
+        }
+      } catch(e) {
+        preview = { note: "Failed to load Playwright artifact preview: " + e.message };
+      }
+    }
+    _renderJobDetail(job, preview);
+    panel.scrollIntoView({block:"start", behavior:"smooth"});
+  } catch(e) {
+    panel.innerHTML = `<div class="job-detail-card"><div class="job-detail-title">Failed to load job detail</div><div class="job-detail-copy">${esc(e.message)}</div></div>`;
+  }
+}
+
+async function renderCompanyPlaywrightPanel(cid) {
+  const panel = document.getElementById("company-playwright-panel");
+  if (!panel) return;
+  const ready = (pipelineState[cid] && pipelineState[cid].status === "done");
+  panel.innerHTML = `
+    <div class="job-detail-card">
+      <div class="job-detail-title">Playwright Recon</div>
+      <div class="job-detail-copy">Loading latest job for this company...</div>
+    </div>
+  `;
+  try {
+    const r = await fetch(`/api/jobs?company_id=${encodeURIComponent(cid)}&limit=20`, {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const jobs = await r.json();
+    const job = jobs.find(j => j.job_type === "playwright_recon");
+    if (!job) {
+      panel.innerHTML = `
+        <div class="job-detail-card">
+          <div class="job-detail-title">Playwright Recon</div>
+          <div class="job-detail-copy">${ready ? "No Playwright Recon jobs found for this company yet." : "Locked until the full pipeline scan finishes."}</div>
+        </div>
+      `;
+      return;
+    }
+    const canArtifacts = job.status === "done";
+    const opts = job.options || {};
+    let inventoryHtml = "";
+    try {
+      const sessionResp = await fetch(_jobArtifactUrl(job.id, "session"), {headers:_authHeaders()});
+      if (sessionResp.ok) {
+        const session = await sessionResp.json();
+        inventoryHtml = _playwrightInventorySummary(session);
+      }
+    } catch(e) {}
+    panel.innerHTML = `
+      <div class="job-detail-card">
+        <div class="job-detail-head">
+          <div>
+            <div class="job-detail-title">Playwright Recon</div>
+            <div class="job-detail-copy">${esc(job.id)} · ${esc(job.status || "—")} · ${esc(job.created_at || "—")}</div>
+          </div>
+          <div class="job-actions">
+            <button class="btn btn-secondary btn-icon" onclick="openJobDetail(${_jsArg(job.id)})">Details</button>
+            ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Report</a>` : ""}
+            ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Session</a>` : ""}
+          </div>
+        </div>
+        <div class="job-detail-grid">
+          <div><span class="job-detail-k">Target</span><div class="job-detail-v">${esc(job.target || opts.target_url || "—")}</div></div>
+          <div><span class="job-detail-k">Started</span><div class="job-detail-v">${esc(_fmtJobTime(job.started_at))}</div></div>
+          <div><span class="job-detail-k">Finished</span><div class="job-detail-v">${esc(_fmtJobTime(job.finished_at))}</div></div>
+          <div><span class="job-detail-k">Attempts</span><div class="job-detail-v">${Number(job.attempts || 0)} / ${Number(job.max_attempts || 1)}</div></div>
+        </div>
+        <div class="job-detail-copy">
+          Output: <code>${esc(opts.output || "—")}</code><br>
+          Evidence: <code>${esc(opts.evidence_dir || "—")}</code>
+        </div>
+        ${inventoryHtml}
+      </div>
+    `;
+  } catch(e) {
+    panel.innerHTML = `
+      <div class="job-detail-card">
+        <div class="job-detail-title">Playwright Recon</div>
+        <div class="job-detail-copy">Failed to load Playwright jobs: ${esc(e.message)}</div>
+      </div>
+    `;
+  }
+}
+
+async function _fetchLatestPlaywrightBundle(cid) {
+  const r = await fetch(`/api/jobs?company_id=${encodeURIComponent(cid)}&limit=20`, {headers:_authHeaders()});
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const jobs = await r.json();
+  const job = (jobs || []).find(j => j.job_type === "playwright_recon");
+  if (!job) return {job: null, session: null, report: ""};
+
+  let session = null;
+  let report = "";
+  try {
+    const sessionResp = await fetch(_jobArtifactUrl(job.id, "session"), {headers:_authHeaders()});
+    if (sessionResp.ok) session = await sessionResp.json();
+  } catch(e) {}
+  try {
+    const reportResp = await fetch(_jobArtifactUrl(job.id, "report"), {headers:_authHeaders()});
+    if (reportResp.ok) {
+      const txt = await reportResp.text();
+      report = txt.split("\n").slice(0, 24).join("\n");
+    }
+  } catch(e) {}
+  return {job, session, report};
+}
+
+async function renderOperationTab(co) {
+  const el = document.getElementById("tab-operation");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Playwright Operation</div>
+          <div class="section-title">Browser-returned surface, session state and runtime evidence</div>
+          <div class="section-sub">This view shows everything the Playwright pass returned for the selected company.</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const bundle = await _fetchLatestPlaywrightBundle(co.id);
+    const job = bundle.job;
+    const session = bundle.session;
+    if (!job) {
+      el.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">∅</div>
+          <div class="empty-state-title">No Playwright run found</div>
+          <div class="empty-state-copy">Run the full scan first, then queue Playwright Recon to populate this view.</div>
+        </div>`;
+      return;
+    }
+
+    const pages = Array.isArray(session?.pages) ? session.pages : [];
+    const endpoints = Array.isArray(session?.endpoints) ? session.endpoints : [];
+    const js = Array.isArray(session?.js) ? session.js : [];
+    const tech = Array.isArray(session?.tech) ? session.tech : [];
+    const consoleEvents = Array.isArray(session?.console) ? session.console : [];
+    const auth = session?.auth || {};
+    const confirmed = Array.isArray(session?.findings) ? session.findings.filter(f => String(f.status || "").includes("confirmed")) : [];
+    const idor = Array.isArray(session?.idor) ? session.idor : [];
+    const xss = Array.isArray(session?.xss) ? session.xss : [];
+    const race = Array.isArray(session?.race) ? session.race : [];
+    const inventory = session ? _playwrightInventorySummary(session) : "";
+    const report = bundle.report || "";
+    const storageKeys = session?.storage ? Object.keys(session.storage) : [];
+    const tokenCount = Array.isArray(session?.tokens) ? session.tokens.length : 0;
+
+    const finished = _fmtJobTime(job.finished_at);
+    const started = _fmtJobTime(job.started_at);
+    const canArtifacts = job.status === "done";
+    const cidJs = _jsArg(job.id);
+
+    if (document.getElementById("tc-operation")) {
+      document.getElementById("tc-operation").textContent = String(pages.length || endpoints.length || js.length || 0);
+    }
+
+    const pageRows = pages.slice(0, 30).map(p => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(p.url || "")}</td>
+        <td>${esc(String(p.depth ?? ""))}</td>
+        <td>${esc(String(p.status ?? ""))}</td>
+        <td>${esc(p.title || "")}</td>
+        <td>${p.screenshot_path ? `<a href="${esc('/' + p.screenshot_path)}" target="_blank" rel="noopener">Open</a>` : "—"}</td>
+      </tr>`).join("");
+
+    const endpointRows = endpoints.slice(0, 40).map(e => `
+      <tr>
+        <td>${esc(e.method || "GET")}</td>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(e.url || "")}</td>
+        <td>${esc(String(e.status ?? "—"))}</td>
+        <td>${esc(e.content_type || "")}</td>
+        <td>${e.auth_required === true ? "yes" : e.auth_required === false ? "no" : "—"}</td>
+      </tr>`).join("");
+
+    const jsRows = js.slice(0, 30).map(j => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(j.file_url || "")}</td>
+        <td>${esc(String(j.size || 0))}</td>
+        <td>${j.source_map_accessible ? "yes" : (j.source_map_url ? "ref" : "no")}</td>
+        <td>${esc(String((j.endpoints || []).length))}</td>
+        <td>${esc(String((j.routes || []).length))}</td>
+      </tr>`).join("");
+
+    const techRows = tech.slice(0, 30).map(t => `
+      <tr>
+        <td>${esc(t.name || "")}</td>
+        <td>${esc(t.category || "")}</td>
+        <td>${esc(t.confidence || "")}</td>
+        <td>${esc(t.source || "")}</td>
+      </tr>`).join("");
+
+    const consoleRows = consoleEvents.slice(0, 40).map(c => `
+      <tr>
+        <td>${esc(c.type || "")}</td>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(c.message || "")}</td>
+        <td>${esc(c.classification || "")}</td>
+        <td>${esc(c.page_url || "")}</td>
+      </tr>`).join("");
+
+    const authForms = Array.isArray(auth.login_forms) ? auth.login_forms : [];
+    const authRows = authForms.slice(0, 10).map(f => `
+      <tr>
+        <td>${esc(f.action || "")}</td>
+        <td>${esc(f.method || "")}</td>
+        <td>${esc(f.password_field || "")}</td>
+        <td>${esc(f.csrf_field || "")}</td>
+      </tr>`).join("");
+
+    const findingsRows = confirmed.slice(0, 20).map(f => `
+      <tr>
+        <td>${esc(f.title || "")}</td>
+        <td>${esc(f.severity || "")}</td>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(f.endpoint || f.url || "")}</td>
+        <td>${esc(f.status || "")}</td>
+      </tr>`).join("");
+
+    const idorRows = idor.slice(0, 20).map(i => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(i.url || "")}</td>
+        <td>${esc(i.parameter || "")}</td>
+        <td>${esc(i.status || "")}</td>
+        <td>${esc((i.notes || []).join("; "))}</td>
+      </tr>`).join("");
+
+    const xssRows = xss.slice(0, 20).map(x => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(x.url || "")}</td>
+        <td>${esc(x.parameter || "")}</td>
+        <td>${esc(x.context || "")}</td>
+        <td>${esc(x.status || "")}</td>
+      </tr>`).join("");
+
+    const raceRows = race.slice(0, 20).map(r => `
+      <tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">${esc(r.url || "")}</td>
+        <td>${esc(r.category || "")}</td>
+        <td>${esc(r.probe_status || "")}</td>
+        <td>${esc(r.reason || "")}</td>
+      </tr>`).join("");
+
+    el.innerHTML = `
+      <div class="section-shell">
+        <div class="section-head">
+          <div class="section-head-main">
+            <div class="section-kicker">Playwright Operation</div>
+            <div class="section-title">${esc(job.company_id || "—")} · ${esc(_jobStatusLabel(job.status))}</div>
+            <div class="section-sub">${esc(job.id)} · started ${esc(started)} · finished ${esc(finished)}</div>
+          </div>
+          <div class="section-actions">
+            <div class="job-actions">
+              <button class="btn btn-secondary btn-icon" onclick='openJobDetail(${cidJs})'>Details</button>
+              ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Report</a>` : ""}
+              ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Session</a>` : ""}
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+          ${_jobKPICard("pages", pages.length)}
+          ${_jobKPICard("endpoints", endpoints.length)}
+          ${_jobKPICard("js", js.length)}
+          ${_jobKPICard("tech", tech.length)}
+          ${_jobKPICard("confirmed", confirmed.length)}
+          ${_jobKPICard("console", consoleEvents.length)}
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Host inventory</div>
+          ${inventory || '<div class="job-detail-copy">No host inventory captured yet.</div>'}
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Captured pages</div>
+          <div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>URL</th><th>Depth</th><th>Status</th><th>Title</th><th>Screenshot</th></tr></thead>
+            <tbody>${pageRows || '<tr><td colspan="5" style="color:var(--text3);padding:18px">No pages captured.</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Endpoints</div>
+          <div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Method</th><th>URL</th><th>Status</th><th>Content-Type</th><th>Auth</th></tr></thead>
+            <tbody>${endpointRows || '<tr><td colspan="5" style="color:var(--text3);padding:18px">No endpoints captured.</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">JavaScript</div>
+          <div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Bundle</th><th>Size</th><th>Source Map</th><th>Endpoints</th><th>Routes</th></tr></thead>
+            <tbody>${jsRows || '<tr><td colspan="5" style="color:var(--text3);padding:18px">No JS captured.</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Technologies</div>
+          <div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Name</th><th>Category</th><th>Confidence</th><th>Source</th></tr></thead>
+            <tbody>${techRows || '<tr><td colspan="4" style="color:var(--text3);padding:18px">No tech detected.</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Console</div>
+          <div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Type</th><th>Message</th><th>Classification</th><th>Page</th></tr></thead>
+            <tbody>${consoleRows || '<tr><td colspan="4" style="color:var(--text3);padding:18px">No console events captured.</td></tr>'}</tbody>
+          </table></div></div>
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Authentication</div>
+          <div class="job-detail-copy">
+            Login forms: <strong>${authForms.length}</strong> · CSRF fields: <strong>${(auth.csrf_fields || []).length || 0}</strong> · Cookies: <strong>${(auth.cookies || []).length || 0}</strong> · Session mechanisms: <strong>${(auth.session_mechanisms || []).length || 0}</strong>
+          </div>
+          ${authForms.length ? `<div class="table-shell" style="margin-top:10px"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Action</th><th>Method</th><th>Password Field</th><th>CSRF</th></tr></thead>
+            <tbody>${authRows}</tbody>
+          </table></div></div>` : '<div class="job-detail-copy">No login form detected.</div>'}
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">Confirmed Findings</div>
+          ${confirmed.length ? `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+            <thead><tr><th>Title</th><th>Severity</th><th>Endpoint</th><th>Status</th></tr></thead>
+            <tbody>${findingsRows}</tbody>
+          </table></div></div>` : '<div class="job-detail-copy">No confirmed findings returned by Playwright.</div>'}
+        </div>
+
+        <div class="job-detail-card" style="margin-bottom:14px">
+          <div class="job-detail-title">IDOR / XSS / Race</div>
+          <div class="job-detail-copy">Storage keys: <strong>${storageKeys.length}</strong> · Tokens: <strong>${tokenCount}</strong> · WebSockets: <strong>${(session?.websockets || []).length || 0}</strong> · SSE: <strong>${(session?.sse || []).length || 0}</strong></div>
+          <div style="margin-top:10px;display:grid;gap:12px">
+            ${idor.length ? `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+              <thead><tr><th>IDOR URL</th><th>Param</th><th>Status</th><th>Notes</th></tr></thead>
+              <tbody>${idorRows}</tbody>
+            </table></div></div>` : '<div class="job-detail-copy">No IDOR candidates returned.</div>'}
+            ${xss.length ? `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+              <thead><tr><th>XSS URL</th><th>Param</th><th>Context</th><th>Status</th></tr></thead>
+              <tbody>${xssRows}</tbody>
+            </table></div></div>` : '<div class="job-detail-copy">No XSS checks returned.</div>'}
+            ${race.length ? `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+              <thead><tr><th>Race URL</th><th>Category</th><th>Status</th><th>Reason</th></tr></thead>
+              <tbody>${raceRows}</tbody>
+            </table></div></div>` : '<div class="job-detail-copy">No race probes returned.</div>'}
+          </div>
+        </div>
+
+        <div class="job-detail-card">
+          <div class="job-detail-title">Report Preview</div>
+          ${report ? `<pre class="job-detail-pre">${esc(report)}</pre>` : '<div class="job-detail-copy">No report preview available.</div>'}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">⚠</div>
+        <div class="empty-state-title">Failed to load Playwright operation</div>
+        <div class="empty-state-copy">${esc(e.message)}</div>
+      </div>`;
+  }
+}
+
+async function renderReconTab(cid) {
+  const el = document.getElementById("tab-pipeline");
+  if (!el) return;
+  const activePipeline = _isPipelineActive(cid);
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Pipeline</div>
+          <div class="section-title">Scan execution and live phase status</div>
+          <div class="section-sub">Monitor the scan runner and the latest Playwright recon panel here.</div>
+        </div>
+        <div class="section-actions">
+          <button id="pipeline-btn-${escAttr(cid)}" class="btn ${activePipeline ? "btn-icon pipeline-stop-btn" : "btn-secondary btn-icon"}" onclick="handlePipelineAction('${escAttr(cid)}')">${activePipeline ? "■ Stop Pipeline" : "▶ Run Pipeline"}</button>
+        </div>
+      </div>
+      <div id="pipeline-status-${escAttr(cid)}" style="margin-top:12px"></div>
+      <div id="company-playwright-panel" style="margin-top:14px"></div>
+    </div>
+  `;
+  renderPipelineStatus(cid);
+  _syncPipelineActionButton(cid);
+  await renderCompanyPlaywrightPanel(cid);
+}
+
+// ── Screenshot lightbox ──────────────────────────────────────────────────────
+let _ssShots = [], _ssIdx = 0;
+
+window.ssLightboxOpen = function(shotUrl, pageUrl, shots, idx) {
+  _ssShots = shots || [{shotUrl, pageUrl}];
+  _ssIdx   = idx   || 0;
+  _ssShow();
+  const lb = document.getElementById('ss-lightbox');
+  if (lb) { lb.classList.add('open'); lb.focus(); }
+};
+
+window.ssLightboxClose = function() {
+  const lb = document.getElementById('ss-lightbox');
+  if (lb) lb.classList.remove('open');
+};
+
+window.ssLightboxNav = function(dir) {
+  if (!_ssShots.length) return;
+  _ssIdx = (_ssIdx + dir + _ssShots.length) % _ssShots.length;
+  _ssShow();
+};
+
+// ── Screenshot hover preview popover ──────────────────────────────────
+
+let _ssPopover = null;
+
+window.ssPopoverShow = function(e, shotUrl, pageUrl) {
+  if (!_ssPopover) {
+    _ssPopover = document.createElement('div');
+    _ssPopover.className = 'ss-popover';
+    _ssPopover.innerHTML = '<img src="" alt=""><div class="ss-popover-url"></div>';
+    document.body.appendChild(_ssPopover);
+  }
+  const img = _ssPopover.querySelector('img');
+  const lbl = _ssPopover.querySelector('.ss-popover-url');
+  img.src = shotUrl;
+  lbl.textContent = (pageUrl || '').length > 90 ? (pageUrl || '').substring(0, 90) + '…' : (pageUrl || '');
+  // Position to the right of the thumbnail, clamped to viewport
+  const rect = e.target.getBoundingClientRect();
+  const pwW = _ssPopover.offsetWidth || 400;
+  let left = rect.right + 12;
+  let top  = rect.top - 40;
+  if (left + pwW > window.innerWidth - 20) left = rect.left - pwW - 12;
+  if (left < 10) left = 10;
+  if (top < 10) top = 10;
+  if (top + 300 > window.innerHeight) top = window.innerHeight - 320;
+  _ssPopover.style.left = left + 'px';
+  _ssPopover.style.top  = top + 'px';
+  _ssPopover.classList.add('show');
+};
+
+window.ssPopoverHide = function() {
+  if (_ssPopover) _ssPopover.classList.remove('show');
+};
+
+function _ssShow() {
+  const s = _ssShots[_ssIdx] || {};
+  const img = document.getElementById('ss-lightbox-img');
+  const lbl = document.getElementById('ss-lightbox-url');
+  const nav = document.getElementById('ss-lightbox-nav');
+  if (img) img.src = s.shotUrl || '';
+  if (lbl) lbl.textContent = s.pageUrl || '';
+  if (nav) nav.style.display = _ssShots.length > 1 ? 'flex' : 'none';
+}
+
+async function loadScreenshots(cid, co) {
+  const el = document.getElementById("tab-screenshots");
+  if (!el) return;
+  el.innerHTML = `<div style="padding:24px;color:var(--text3);font-size:.8rem">Loading recon data…</div>`;
+
+  const [shotsRes, bundleRes] = await Promise.allSettled([
+    fetch(`/api/screenshots/${encodeURIComponent(cid)}`, {headers:_authHeaders()}).then(r=>r.ok?r.json():[]).catch(()=>[]),
+    _fetchLatestPlaywrightBundle(cid).catch(()=>({job:null,session:null}))
+  ]);
+
+  const shots   = shotsRes.status  === 'fulfilled' ? (shotsRes.value  || []) : [];
+  const bundle  = bundleRes.status === 'fulfilled' ? bundleRes.value        : {job:null,session:null};
+  const session = bundle.session;
+
+  if (co) buildUnifiedEndpoints(co);
+  const staticEndpoints = co?._unifiedEndpoints || [];
+  const staticSecrets   = co?._unifiedSecrets   || [];
+
+  const pwPages     = Array.isArray(session?.pages)           ? session.pages           : [];
+  const pwEndpoints = Array.isArray(session?.endpoints)       ? session.endpoints       : [];
+  const pwTokens    = Array.isArray(session?.tokens)          ? session.tokens          : [];
+  const pwGlobals   = Array.isArray(session?.globals_secrets) ? session.globals_secrets : [];
+  const pwFindings  = Array.isArray(session?.findings)        ? session.findings        : [];
+
+  const countEl = document.getElementById("tc-screenshots");
+  if (countEl) countEl.textContent = String(shots.length || 0);
+
+  // ── section builder helpers ──────────────────────────────────────────────
+  function _secHead(kicker, title, sub, count) {
+    return `
+      <div class="section-head" style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border)">
+        <div class="section-head-main">
+          <div class="section-kicker">${kicker}</div>
+          <div class="section-title">${esc(title)}</div>
+          <div class="section-sub">${esc(sub)}</div>
+        </div>
+        ${count != null ? `<div class="section-actions"><span class="sec-cnt">${count} items</span></div>` : ''}
+      </div>`;
+  }
+
+  function _emptyRow(msg) {
+    return `<tr><td colspan="99" style="padding:18px;color:var(--text3);text-align:center;font-size:.75rem">${msg}</td></tr>`;
+  }
+
+  // ── SCREENSHOTS ──────────────────────────────────────────────────────────
+  let html = `<div class="section-shell">
+    <div class="section-head">
+      <div class="section-head-main">
+        <div class="section-kicker">Recon</div>
+        <div class="section-title">URLs · Endpoints · Secrets</div>
+        <div class="section-sub">Browser evidence — crawled URLs, discovered endpoints and hardcoded credentials.</div>
+      </div>
+    </div>`;
+
+  // ── CRAWLED URLS (playwright pages) ─────────────────────────────────────
+  html += _secHead('🌐', `Crawled URLs (${pwPages.length})`, 'Pages visited by the Playwright recon agent.', null);
+  if (pwPages.length) {
+    const pageRows = pwPages.map(p => {
+      const url = p.url || p.final_url || '';
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">
+          <a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--teal);text-decoration:none">${esc(url)}</a>
+        </td>
+        <td style="text-align:center">${p.status_code ?? '—'}</td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.7rem">${esc(p.title||'')}</td>
+        <td style="color:var(--text3);font-size:.68rem">${esc(p.server||'')}</td>
+      </tr>`;
+    }).join('');
+    html += `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+      <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Server</th></tr></thead>
+      <tbody>${pageRows}</tbody></table></div></div>`;
+  } else {
+    html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No crawled pages from Playwright. Run Playwright Recon job to populate.</div>`;
+  }
+
+  // ── ENDPOINTS ────────────────────────────────────────────────────────────
+  // Merge static (wayback/JS) + playwright endpoints, deduplicate by URL
+  const epMap = new Map();
+  staticEndpoints.forEach(e => epMap.set(e.url, {...e, _src:'static'}));
+  pwEndpoints.forEach(e => {
+    const url = e.url || '';
+    if (!epMap.has(url)) epMap.set(url, {url, method: e.method||'GET', type:'browser', _src:'playwright'});
+  });
+  const mergedEp = [...epMap.values()];
+
+  html += _secHead('🔗', `Endpoints (${mergedEp.length})`, 'API paths and routes from JS analysis and browser crawl.', null);
+  if (mergedEp.length) {
+    const SEV = {critical:'#fb7185',high:'#fb923c',medium:'#fbbf24',low:'#4ade80',info:'#94a3b8'};
+    const epRows = mergedEp.slice(0, 500).map(e => {
+      const mc = _methodColor ? _methodColor(e.method||'GET') : '#60a5fa';
+      const src = e._src === 'playwright' ? `<span style="font-size:.58rem;color:var(--teal);opacity:.7">PW</span>` : '';
+      return `<tr>
+        <td style="width:60px">
+          <span style="font-family:var(--mono);font-size:.64rem;font-weight:700;color:${mc}">${esc(e.method||'GET')}</span>
+          ${src}
+        </td>
+        <td style="font-family:var(--mono);font-size:.7rem;word-break:break-all">
+          <a href="${esc(e.url)}" target="_blank" rel="noopener" style="color:var(--text1);text-decoration:none">${esc(e.url)}</a>
+        </td>
+        <td style="font-size:.66rem;color:var(--text3)">${esc(e.type||'')}</td>
+        <td style="font-size:.66rem;color:${e.severity?SEV[e.severity]||'#94a3b8':'var(--text3)'}">${e.severity?e.severity.toUpperCase():''}</td>
+      </tr>`;
+    }).join('');
+    const overflow = mergedEp.length > 500 ? `<tr><td colspan="4" style="padding:8px 12px;color:var(--text3);font-size:.7rem">${mergedEp.length - 500} more endpoints — export CSV for full list.</td></tr>` : '';
+    html += `<div class="table-shell"><div class="tl-wrap" style="max-height:360px;overflow-y:auto"><table class="jobs-table">
+      <thead><tr><th>Method</th><th>URL</th><th>Type</th><th>Risk</th></tr></thead>
+      <tbody>${epRows}${overflow}</tbody></table></div></div>`;
+  } else {
+    html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No endpoints discovered yet. Run wayback, urlfinder, js_endpoints or Playwright Recon.</div>`;
+  }
+
+  // ── SECRETS & HARDCODED KEYS ─────────────────────────────────────────────
+  // Merge: static secrets + playwright tokens + playwright globals
+  const secArr = [];
+  staticSecrets.forEach(s => secArr.push({type:s.type||'secret', value:s.value||'', file:s.file||'', host:s.host||'', severity:s.severity||'medium', _src:'static'}));
+  pwTokens.forEach(t => secArr.push({type:t.type||'token', value:t.value||JSON.stringify(t), file:'', host:t.host||'', severity:'high', _src:'playwright'}));
+  pwGlobals.forEach(g => secArr.push({type:'global', value:g.sample||g.key||'', file:g.key||'', host:'', severity:'medium', _src:'playwright'}));
+
+  html += _secHead('🔑', `Secrets & Hardcoded Keys (${secArr.length})`, 'Credentials, tokens and API keys extracted from JS bundles and browser globals. Click value to reveal.', null);
+  if (secArr.length) {
+    const SEVC = {critical:'#fb7185',high:'#fb923c',medium:'#fbbf24',low:'#4ade80'};
+    function maskVal(v) {
+      const s = String(v||'');
+      if (s.length <= 6) return '••••••';
+      return s.slice(0,3) + '••••••' + s.slice(-3);
+    }
+    const secRows = secArr.map((s, i) => {
+      const clr = SEVC[s.severity] || '#94a3b8';
+      const src = s._src === 'playwright' ? `<span style="font-size:.56rem;color:var(--teal);opacity:.7;margin-left:3px">PW</span>` : '';
+      return `<tr>
+        <td><span style="font-size:.68rem;background:rgba(251,146,60,.1);color:#fb923c;border:1px solid rgba(251,146,60,.2);border-radius:4px;padding:1px 6px">${esc(s.type)}</span>${src}</td>
+        <td><code class="secret-value" style="cursor:pointer;font-size:.7rem;font-family:var(--mono);color:var(--text2)"
+          onclick="this.textContent=${JSON.stringify(String(s.value||''))};this.style.color='var(--teal)'">${esc(maskVal(s.value))}</code></td>
+        <td style="font-size:.67rem;color:var(--text3);font-family:var(--mono);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(s.file)}">${esc(s.file||'—')}</td>
+        <td style="font-size:.67rem;color:var(--text3)">${esc(s.host||'—')}</td>
+        <td><span style="font-size:.62rem;font-weight:700;color:${clr}">${s.severity.toUpperCase()}</span></td>
+      </tr>`;
+    }).join('');
+    html += `<div class="table-shell"><div class="tl-wrap" style="max-height:320px;overflow-y:auto"><table class="jobs-table">
+      <thead><tr><th>Type</th><th>Value (click to reveal)</th><th>File</th><th>Host</th><th>Risk</th></tr></thead>
+      <tbody>${secRows}</tbody></table></div></div>`;
+  } else {
+    html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No secrets or hardcoded keys found. Run js_secrets, trufflehog or Playwright Recon.</div>`;
+  }
+
+  // ── Playwright findings summary (if any) ─────────────────────────────────
+  if (pwFindings.length) {
+    html += _secHead('⚡', `Playwright Findings (${pwFindings.length})`, 'Issues flagged by the automated browser agent.', null);
+    const fRows = pwFindings.map(f => `<tr>
+      <td style="font-size:.7rem;font-weight:600;color:${f.severity==='critical'?'#fb7185':f.severity==='high'?'#fb923c':'#fbbf24'}">${esc(f.severity||'').toUpperCase()}</td>
+      <td style="font-size:.75rem">${esc(f.title||f.type||'')}</td>
+      <td style="font-size:.68rem;color:var(--text3);font-family:var(--mono);word-break:break-all">${esc(f.url||f.evidence||'')}</td>
+    </tr>`).join('');
+    html += `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
+      <thead><tr><th>Sev</th><th>Finding</th><th>URL / Evidence</th></tr></thead>
+      <tbody>${fRows}</tbody></table></div></div>`;
+  }
+
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+function renderPlaywrightOverview(jobs) {
+  const el = document.getElementById("playwright-overview");
+  if (!el) return;
+  const pwJobs = (jobs || []).filter(job => job.job_type === "playwright_recon");
+  if (!pwJobs.length) {
+    el.innerHTML = `
+      <div class="playwright-item">
+        <div class="playwright-item-head">
+          <div>
+            <div class="playwright-item-title">Playwright Recon</div>
+            <div class="playwright-item-sub">No Playwright jobs in the current queue view.</div>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const done = pwJobs.filter(j => j.status === "done").length;
+  const running = pwJobs.filter(j => j.status === "running").length;
+  const pending = pwJobs.filter(j => j.status === "pending").length;
+  el.innerHTML = `
+    <div class="playwright-item" style="grid-column:1/-1">
+      <div class="playwright-item-head">
+        <div>
+          <div class="playwright-item-title">Playwright Recon Overview</div>
+          <div class="playwright-item-sub">${pwJobs.length} job(s) total · ${done} done · ${running} running · ${pending} pending</div>
+        </div>
+      </div>
+      <div class="playwright-item-badges">
+        <span class="playwright-item-badge done">Done ${done}</span>
+        <span class="playwright-item-badge running">Running ${running}</span>
+        <span class="playwright-item-badge pending">Pending ${pending}</span>
+      </div>
+    </div>
+    ${pwJobs.slice(0, 4).map(job => _playwrightCard(job, {
+      meta: `${_fmtJobTime(job.created_at)} · ${(Array.isArray(job.options?.scope) ? job.options.scope.join(", ") : (job.options?.scope || "no scope"))}`
+    })).join("")}
+  `;
+  _hydratePlaywrightInventoryBatch(pwJobs);
+}
+
+async function renderPlaywrightOverviewAll() {
+  const el = document.getElementById("playwright-overview-all");
+  if (!el) return;
+  el.innerHTML = `
+    <div class="playwright-item">
+      <div class="playwright-item-head">
+        <div>
+          <div class="playwright-item-title">Playwright Recon</div>
+          <div class="playwright-item-sub">Loading latest global jobs...</div>
+        </div>
+      </div>
+    </div>
+  `;
+  try {
+    const r = await fetch("/api/jobs?limit=20", {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const jobs = await r.json();
+    const pwJobs = (jobs || []).filter(job => job.job_type === "playwright_recon");
+    if (!pwJobs.length) {
+      el.innerHTML = `
+        <div class="playwright-item">
+          <div class="playwright-item-head">
+            <div>
+              <div class="playwright-item-title">Playwright Recon</div>
+              <div class="playwright-item-sub">No Playwright jobs have been queued yet.</div>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
+    const done = pwJobs.filter(j => j.status === "done").length;
+    const running = pwJobs.filter(j => j.status === "running").length;
+    const pending = pwJobs.filter(j => j.status === "pending").length;
+    el.innerHTML = `
+      <div class="playwright-item" style="grid-column:1/-1">
+        <div class="playwright-item-head">
+          <div>
+            <div class="playwright-item-title">Playwright Recon Overview</div>
+            <div class="playwright-item-sub">${pwJobs.length} recent job(s) · ${done} done · ${running} running · ${pending} pending</div>
+          </div>
+          <div class="job-actions">
+            <button class="btn btn-secondary btn-icon" onclick="showPage('jobs'); loadJobs();">Open Queue</button>
+          </div>
+        </div>
+      </div>
+      ${pwJobs.slice(0, 3).map(job => _playwrightCard(job)).join("")}
+    `;
+    _hydratePlaywrightInventoryBatch(pwJobs);
+  } catch(e) {
+    el.innerHTML = `
+      <div class="playwright-item">
+        <div class="playwright-item-head">
+          <div>
+            <div class="playwright-item-title">Playwright Recon</div>
+            <div class="playwright-item-sub">Failed to load overview: ${esc(e.message)}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+async function loadJobs() {
+  const tbody = document.getElementById("jobs-tbody");
+  if (!tbody) return;
+  const note = document.getElementById("jobs-note");
+  const pager = document.getElementById("jobs-pager");
+  // KPI cards + per-company cards are driven by the aggregate summary so they
+  // always reflect true totals, independent of what the table is showing.
+  loadJobCompanyCards();
+  renderPlaywrightOverviewAll();
+
+  try {
+    // Drill-down mode: the table becomes the per-domain list for one company.
+    if (_jobDrilldownCid) {
+      if (pager) pager.style.display = "none";
+      const cid = _jobDrilldownCid;
+      const q = `company_id=${encodeURIComponent(cid)}`;
+      const arr = a => Array.isArray(a) ? a : [];
+      let jobs;
+      if (_jobDrillQuery) {
+        // Search expands job options too, so it finds domains stored inside
+        // single pipeline jobs, not only per-domain queue targets.
+        const res = await fetch(`/api/jobs?${q}&limit=500`, {headers:_authHeaders()}).then(r=>r.json());
+        if (_jobDrilldownCid !== cid) return;
+        jobs = arr(res);
+      } else {
+        const all = await fetch(`/api/jobs?${q}&limit=500`, {headers:_authHeaders()}).then(r=>r.json());
+        if (_jobDrilldownCid !== cid) return;   // toggled away mid-flight
+        jobs = arr(all);
+      }
+      const domainRows = _jobDomainRows(jobs, cid, _jobDrillQuery);
+      renderJobDomains(domainRows, {cid});
+      const sum = (_jobSummaryCache.find(s => s.company_id === cid) || {}).counts || {};
+      const waitT = (sum.running||0)+(sum.pending||0), doneT = sum.done||0, stoppedT = sum.stopped||0;
+      const back = `<a href="#" onclick="exitJobDrilldown();return false" style="color:var(--teal)">voltar para a fila</a>`;
+      if (note) note.innerHTML = _jobDrillQuery
+        ? `${domainRows.length} dominio(s) encontrados por "${esc(_jobDrillQuery)}" em <b>${esc(_companyNameForJob(cid))}</b>. ${back}`
+        : `Dominios de <b>${esc(_companyNameForJob(cid))}</b>: ${domainRows.length.toLocaleString()} dominio(s), ${waitT.toLocaleString()} aguardando, ${doneT.toLocaleString()} concluidos, ${stoppedT.toLocaleString()} parados. ${back}`;
+      return;
+    }
+
+    // Default mode: show recent queue history. Status filters narrow it down
+    // without flooding the browser because the API remains capped.
+    const type = document.getElementById("jobs-type-filter")?.value || "";
+    const statusEl = document.getElementById("jobs-status-filter");
+    const status = statusEl ? statusEl.value : "running";
+    const offset = (_jobsPage - 1) * JOBS_PAGE_SIZE;
+    const url = `/api/jobs?limit=${JOBS_PAGE_SIZE}&offset=${offset}&include_total=1`
+      + (type ? "&job_type=" + encodeURIComponent(type) : "")
+      + (status ? "&status=" + encodeURIComponent(status) : "");
+    const r = await fetch(url, {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const payload = await r.json();
+    const jobs = Array.isArray(payload) ? payload : (payload.jobs || []);
+    _jobsTotal = Array.isArray(payload) ? jobs.length : Number(payload.total || 0);
+    const maxPage = Math.max(1, Math.ceil(_jobsTotal / JOBS_PAGE_SIZE));
+    if (_jobsPage > maxPage) {
+      _jobsPage = maxPage;
+      return loadJobs();
+    }
+    renderJobs(jobs, {drilldown: false});
+    renderJobsPager(_jobsTotal, _jobsPage, JOBS_PAGE_SIZE);
+    _updateJobCountBadgeFromList(jobs);
+    if (note) note.textContent = status === "running"
+      ? `${_jobsTotal.toLocaleString()} job(s) rodando agora. Exibindo 20 por pagina. Clique em uma empresa para ver dominios pendentes e finalizados.`
+      : `${_jobsTotal.toLocaleString()} job(s) no historico${type ? " de " + _jobTypeLabel(type) : ""}. Exibindo 20 por pagina.`;
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red);text-align:center;padding:22px">Failed to load jobs: ${esc(e.message)}</td></tr>`;
+    if (note) note.textContent = "Fila indisponivel.";
+    if (pager) pager.style.display = "none";
+  }
+}
+
+function exitJobDrilldown() {
+  _jobDrilldownCid = null;
+  _jobDrillQuery = "";
+  const dd = document.getElementById("jobs-drilldown");
+  if (dd) dd.innerHTML = "";
+  renderJobCompanyCards(_jobSummaryCache);
+  loadJobs();
+}
+
+function _jobOptionDomains(job, cid) {
+  const opts = job && job.options ? job.options : {};
+  const domains = [];
+  const add = value => {
+    const clean = String(value || "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+    if (clean && clean !== cid && !domains.includes(clean)) domains.push(clean);
+  };
+  if (Array.isArray(opts.domains)) opts.domains.forEach(add);
+  if (Array.isArray(opts.scope)) opts.scope.forEach(add);
+  add(opts.queue_domain);
+  add(opts.target_url);
+  add(job && job.target);
+  return domains;
+}
+
+function _jobDomainRows(jobs, cid, query) {
+  const q = String(query || "").trim().toLowerCase();
+  const rows = new Map();
+  const sorted = [...(Array.isArray(jobs) ? jobs : [])].sort((a, b) => {
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
+  sorted.forEach(job => {
+    _jobOptionDomains(job, cid).forEach(domain => {
+      if (q && !domain.toLowerCase().includes(q)) return;
+      if (!rows.has(domain)) rows.set(domain, {
+        domain,
+        job_id: job.id,
+        company_id: job.company_id,
+        job_type: job.job_type,
+        status: job.status,
+        attempts: job.attempts,
+        max_attempts: job.max_attempts,
+        created_at: job.created_at,
+        started_at: job.started_at,
+        finished_at: job.finished_at,
+        error: job.error,
+      });
+    });
+  });
+  return [...rows.values()].sort((a, b) => {
+    const sa = a.status === "running" ? 0 : a.status === "pending" ? 1 : 2;
+    const sb = b.status === "running" ? 0 : b.status === "pending" ? 1 : 2;
+    return sa - sb || a.domain.localeCompare(b.domain);
+  });
+}
+
+function renderJobDomains(rows, ctx) {
+  const tbody = document.getElementById("jobs-tbody");
+  if (!tbody) return;
+  const cid = ctx && ctx.cid;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="job-empty">Nenhum dominio encontrado para esta empresa.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(row => {
+    const cls = _jobStatusClass(row.status);
+    const err = row.error ? `<div class="job-error" title="${esc(row.error)}">${esc(row.error)}</div>` : "";
+    const canOpenResults = row.status === "done" || row.status === "running" || row.status === "stopped";
+    return `<tr>
+      <td><span class="job-status ${cls}">${_jobStatusLabel(row.status)}</span></td>
+      <td>
+        <div class="job-company" style="font-family:var(--mono)">${esc(row.domain)}</div>
+        <div class="job-id">${esc(row.job_id)}</div>
+        ${err}
+      </td>
+      <td><span class="job-type">${esc(_jobTypeLabel(row.job_type))}</span></td>
+      <td>${_fmtJobTime(row.created_at)}</td>
+      <td>${_fmtJobTime(row.started_at)}</td>
+      <td>${_fmtJobTime(row.finished_at)}</td>
+      <td>${Number(row.attempts || 0)} / ${Number(row.max_attempts || 1)}</td>
+      <td>
+        <div class="job-actions">
+          <button type="button" class="btn btn-secondary btn-icon" data-job-action="detail" data-job-id="${escAttr(row.job_id)}">Detalhes</button>
+          ${canOpenResults ? `<button type="button" class="btn btn-secondary btn-icon" data-job-action="domain-results" data-cid="${escAttr(cid)}" data-target="${escAttr(row.domain)}">Resultados</button>` : ""}
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function renderJobs(jobs, ctx) {
+  const tbody = document.getElementById("jobs-tbody");
+  if (!tbody) return;
+  const drilldown = !!(ctx && ctx.drilldown);
+  const cid = ctx && ctx.cid;
+
+  if (!jobs.length) {
+    const msg = drilldown ? "Nenhum dominio encontrado para esta empresa." : "Nenhum job encontrado neste filtro.";
+    tbody.innerHTML = `<tr><td colspan="8"><div class="job-empty">${msg}</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = jobs.map(job => {
+    const cls = _jobStatusClass(job.status);
+    const err = job.error ? `<div class="job-error" title="${esc(job.error)}">${esc(job.error)}</div>` : "";
+    const canCancel = job.status === "pending";
+    const canArtifacts = job.job_type === "playwright_recon" && job.status === "done";
+    const isErrorOrStuck = job.status === "error" || (job.status === "running" && job.attempts > 1);
+    const rowClass = isErrorOrStuck ? " class='job-row-err'" : "";
+    const primary = _jobPrimaryTarget(job);
+    const secondary = `<div class="job-id">${esc(_jobSecondaryLabel(job))}</div>`;
+    const isDone = job.status === "done";
+    const openBtn = drilldown
+      ? (isDone
+          ? `<button type="button" class="btn btn-secondary btn-icon" data-job-action="domain-results" data-cid="${escAttr(cid)}" data-target="${escAttr(job.target || "")}">Resultados</button>`
+          : "")
+      : (job.company_id ? `<button type="button" class="btn btn-secondary btn-icon" data-job-action="open-company-pipeline" data-cid="${escAttr(job.company_id)}">Abrir</button>` : "");
+    return `<tr${rowClass}>
+      <td><span class="job-status ${cls}">${_jobStatusLabel(job.status)}</span></td>
+      <td>
+        <div class="job-company job-target">${esc(primary)}</div>
+        ${secondary}
+        ${err}
+      </td>
+      <td><span class="job-type">${esc(_jobTypeLabel(job.job_type))}</span></td>
+      <td>${_fmtJobTime(job.created_at)}</td>
+      <td>${_fmtJobTime(job.started_at)}</td>
+      <td>${_fmtJobTime(job.finished_at)}</td>
+      <td>${Number(job.attempts || 0)} / ${Number(job.max_attempts || 1)}</td>
+      <td>
+        <div class="job-actions">
+          <button type="button" class="btn btn-secondary btn-icon" data-job-action="detail" data-job-id="${escAttr(job.id)}">Detalhes</button>
+          ${openBtn}
+          ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Relatorio</a>` : ""}
+          ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Sessao</a>` : ""}
+          ${canCancel ? `<button type="button" class="btn btn-icon job-cancel" data-job-action="cancel" data-job-id="${escAttr(job.id)}">Cancelar</button>` : ""}
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+
+  const firstUseful = jobs.find(job => job.job_type === "playwright_recon" && job.status === "done");
+  if (firstUseful && !document.querySelector("#job-detail-panel .job-detail-title")) {
+    openJobDetail(firstUseful.id);
+  }
+}
+
+function renderJobsPager(total, page, pageSize) {
+  const pager = document.getElementById("jobs-pager");
+  const info = document.getElementById("jobs-pinfo");
+  const btns = document.getElementById("jobs-pbtns");
+  if (!pager || !info || !btns) return;
+  const pages = Math.max(1, Math.ceil((total || 0) / pageSize));
+  if (!total || pages <= 1) {
+    pager.style.display = "none";
+    return;
+  }
+  pager.style.display = "flex";
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+  info.textContent = `${start.toLocaleString()}-${end.toLocaleString()} de ${total.toLocaleString()} jobs`;
+
+  const nums = [];
+  const add = p => { if (!nums.includes(p) && p >= 1 && p <= pages) nums.push(p); };
+  add(1);
+  for (let p = page - 2; p <= page + 2; p++) add(p);
+  add(pages);
+  nums.sort((a,b) => a-b);
+
+  let last = 0;
+  const html = [];
+  html.push(`<button class="pb" ${page <= 1 ? "disabled" : ""} onclick="setJobsPage(${page - 1})">←</button>`);
+  nums.forEach(p => {
+    if (last && p - last > 1) html.push(`<span class="job-page-gap">…</span>`);
+    html.push(`<button class="pb ${p === page ? "active" : ""}" onclick="setJobsPage(${p})">${p}</button>`);
+    last = p;
+  });
+  html.push(`<button class="pb" ${page >= pages ? "disabled" : ""} onclick="setJobsPage(${page + 1})">→</button>`);
+  btns.innerHTML = html.join("");
+}
+
+function setJobsPage(page) {
+  _jobsPage = Math.max(1, Number(page) || 1);
+  loadJobs();
+}
+
+// ── Per-company queue cards + per-domain drill-down ───────────────────────────
+let _jobSummaryCache = [], _jobDrilldownCid = null;
+let _jobDrillQuery = "", _jobDrillTimer = null;
+
+// Persistent search bar for the drill-down (rendered once on entry so the 5s
+// poll that refreshes the table body does not steal focus or reset the query).
+function _renderJobDrillSearchBar(cid) {
+  const host = document.getElementById("jobs-drilldown");
+  if (!host) return;
+  host.innerHTML = `
+    <div class="jobs-drillbar">
+      <input class="fi" id="job-drill-search" type="text" value="${escAttr(_jobDrillQuery)}"
+             placeholder="Buscar dominio em ${esc(_companyNameForJob(cid))}..."
+             oninput="_onJobDrillSearch()" autocomplete="off"
+             aria-label="Buscar dominio nesta empresa">
+      <button class="btn btn-secondary btn-icon" onclick="exitJobDrilldown()">Voltar</button>
+    </div>`;
+}
+
+function _onJobDrillSearch() {
+  const inp = document.getElementById("job-drill-search");
+  _jobDrillQuery = inp ? inp.value.trim() : "";
+  clearTimeout(_jobDrillTimer);
+  _jobDrillTimer = setTimeout(() => { if (_jobDrilldownCid) loadJobs(); }, 280);
+}
+
+async function loadJobCompanyCards() {
+  const host = document.getElementById("jobs-company-cards");
+  if (!host) return;
+  try {
+    const r = await fetch("/api/jobs/summary", {headers:_authHeaders()});
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    _jobSummaryCache = await r.json();
+    renderJobCompanyCards(_jobSummaryCache);
+  } catch(e) {
+    host.innerHTML = `<div style="color:var(--text3);font-size:.7rem;padding:6px 0">Per-company summary unavailable.</div>`;
+  }
+}
+
+function _renderJobKPIs(summary) {
+  const el = document.getElementById("jobs-summary");
+  if (!el) return;
+  const totals = {running:0, pending:0, done:0, error:0, stopped:0, cancelled:0};
+  (Array.isArray(summary) ? summary : []).forEach(s => {
+    const c = s.counts || {};
+    for (const k in totals) totals[k] += (c[k] || 0);
+  });
+  el.innerHTML = ["running", "pending", "done", "error", "stopped", "cancelled"].map(st => _jobKPICard(st, totals[st] || 0)).join("");
+}
+
+function renderJobCompanyCards(summary) {
+  const host = document.getElementById("jobs-company-cards");
+  if (!host) return;
+  _renderJobKPIs(summary);
+  if (!Array.isArray(summary) || !summary.length) {
+    host.innerHTML = "";
+    _jobDrilldownCid = null;
+    _jobDrillQuery = "";
+    const dd = document.getElementById("jobs-drilldown");
+    if (dd) dd.innerHTML = "";
+    return;
+  }
+  const cards = summary.filter(s => (s.total || 0) > 0);
+  const chip = (n, label, cls) => n ? `<span class="job-chip ${cls}">${n.toLocaleString()} ${label}</span>` : "";
+  host.innerHTML = `<div class="job-company-card-grid">` + cards.map(s => {
+    const c = s.counts || {};
+    const active = _jobDrilldownCid === s.company_id;
+    const name = _companyNameForJob(s.company_id);
+    return `
+      <div class="job-company-card ${active ? "active" : ""}" data-job-company-id="${escAttr(s.company_id)}" role="button" tabindex="0">
+        <div class="job-company-card-head">
+          <div class="job-company-card-title">${esc(name)}</div>
+          <div class="job-company-card-total">${(s.total||0).toLocaleString()} jobs</div>
+        </div>
+        <div class="job-company-card-chips">
+          ${chip(c.running, "rodando", "running")}
+          ${chip(c.pending, "pendente", "pending")}
+          ${chip(c.done, "concluido", "done")}
+          ${chip(c.error, "erro", "error")}
+          ${chip(c.cancelled, "cancelado", "cancelled")}
+          ${chip(c.stopped, "parado", "stopped")}
+        </div>
+        <div class="job-company-card-cta">${active ? "Mostrando dominios na tabela" : "Ver dominios da fila"}</div>
+      </div>`;
+  }).join("") + `</div>`;
+}
+
+function toggleJobDrilldown(cid) {
+  const entering = _jobDrilldownCid !== cid;
+  _jobDrilldownCid = entering ? cid : null;
+  _jobDrillQuery = "";
+  const dd = document.getElementById("jobs-drilldown");
+  if (entering) _renderJobDrillSearchBar(cid);
+  else if (dd) dd.innerHTML = "";
+  renderJobCompanyCards(_jobSummaryCache);   // update active state immediately
+  loadJobs();                                // table switches into / out of drill-down mode
+}
+
+async function openDomainResults(cid, domain) {
+  try { await selectCompany(cid); } catch(e) {}
+  openSubdomainsFiltered(domain);
+}
+
+// Launch dialog: lets the operator set safe-mode, active tests (XSS/Race) and auth-state
+// before running. Active tests are gated behind safe-mode OFF + an authorization confirm.
+function openPlaywrightModal(cid) {
+  const cfg = _currentPlaywrightDefaults();
+  const co = allCompanies().find(c => c.id === cid);
+  const target = (co?.domains || []).filter(Boolean)[0] || "";
+  const safe = cfg.playwright_safe_mode !== false;
+  closePlaywrightModal();
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay show";
+  ov.id = "modal-playwright";
+  ov.innerHTML = `
+    <div class="modal" style="width:470px">
+      <div class="modal-title">▶ Playwright Recon — ${esc(co?.name || cid)}</div>
+      <div class="modal-hint" style="margin-bottom:12px">Target: https://${esc(String(target).replace(/^https?:\/\//, ""))}</div>
+      <div style="display:flex;gap:10px">
+        <div class="modal-field" style="flex:1"><label class="modal-label">Max pages</label>
+          <input type="number" class="modal-input" id="pw-max-pages" value="${Number(cfg.playwright_max_pages || 50)}" min="1" max="2000"></div>
+        <div class="modal-field" style="flex:1"><label class="modal-label">Max depth</label>
+          <input type="number" class="modal-input" id="pw-max-depth" value="${Number(cfg.playwright_max_depth || 3)}" min="1" max="10"></div>
+      </div>
+      <div class="modal-field"><label class="modal-label">Auth state — storage_state JSON (habilita testes autenticados)</label>
+        <input type="text" class="modal-input" id="pw-auth-state" value="${esc(cfg.playwright_auth_state || "")}" placeholder="/caminho/para/auth.json"></div>
+      <div class="modal-field"><label class="modal-label">Auth state B — para IDOR A/B (opcional)</label>
+        <input type="text" class="modal-input" id="pw-auth-state-b" value="${esc(cfg.playwright_auth_state_b || "")}" placeholder="/caminho/para/auth-b.json"></div>
+      <label class="modal-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:10px">
+        <input type="checkbox" id="pw-safe-mode" ${safe ? "checked" : ""} onchange="_pwSafeToggle()"><span>Safe mode (sem testes ativos)</span></label>
+      <div id="pw-active-box" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;opacity:${safe ? 0.5 : 1}">
+        <div class="modal-hint" id="pw-active-warn" style="margin-top:0;color:var(--orange);${safe ? "display:none" : ""}">⚠ Active testing — use apenas em alvos autorizados.</div>
+        <label class="modal-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:8px 0 0">
+          <input type="checkbox" class="pw-active-chk" id="pw-test-xss" ${cfg.playwright_test_xss ? "checked" : ""} ${safe ? "disabled" : ""}><span>Test XSS (confirmado por execução real)</span></label>
+        <label class="modal-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:8px 0 0">
+          <input type="checkbox" class="pw-active-chk" id="pw-test-race" ${cfg.playwright_test_race ? "checked" : ""} ${safe ? "disabled" : ""}><span>Test Race (probe paralelo bounded, não-destrutivo)</span></label>
+        <label class="modal-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:8px 0 0">
+          <input type="checkbox" class="pw-active-chk" id="pw-test-access" ${cfg.playwright_test_access ? "checked" : ""} ${safe ? "disabled" : ""}><span>Test Access (broken access control — "confia no front")</span></label>
+      </div>
+      <label class="modal-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:6px">
+        <input type="checkbox" id="pw-allow-external" ${cfg.playwright_allow_external ? "checked" : ""}><span>Allow external (seguir fora do escopo)</span></label>
+      <div class="modal-btns">
+        <button class="btn btn-secondary" onclick="closePlaywrightModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitPlaywrightRecon('${cid}')">▶ Run</button>
+      </div>
+    </div>`;
+  ov.addEventListener("click", e => { if (e.target === ov) closePlaywrightModal(); });
+  document.body.appendChild(ov);
+}
+
+function _pwSafeToggle() {
+  const safe = document.getElementById("pw-safe-mode").checked;
+  document.querySelectorAll(".pw-active-chk").forEach(c => { c.disabled = safe; if (safe) c.checked = false; });
+  document.getElementById("pw-active-box").style.opacity = safe ? 0.5 : 1;
+  const warn = document.getElementById("pw-active-warn");
+  if (warn) warn.style.display = safe ? "none" : "";
+}
+
+function closePlaywrightModal() {
+  const el = document.getElementById("modal-playwright");
+  if (el) el.remove();
+}
+
+function submitPlaywrightRecon(cid) {
+  const v = id => document.getElementById(id);
+  const opts = {
+    max_pages: Number(v("pw-max-pages").value) || 50,
+    max_depth: Number(v("pw-max-depth").value) || 3,
+    auth_state: v("pw-auth-state").value.trim(),
+    auth_state_b: v("pw-auth-state-b").value.trim(),
+    safe_mode: v("pw-safe-mode").checked,
+    test_xss: v("pw-test-xss").checked,
+    test_race: v("pw-test-race").checked,
+    test_access: v("pw-test-access").checked,
+    allow_external: v("pw-allow-external").checked,
+  };
+  if (!opts.safe_mode && (opts.test_xss || opts.test_race || opts.test_access)) {
+    if (!confirm("Active testing (XSS/Race/Access) envia payloads/requests ao alvo. Confirme que você tem autorização para testar este alvo.")) return;
+  }
+  let cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem("asm_settings") || "{}"); } catch(e) {}
+  Object.assign(cfg, {
+    playwright_max_pages: opts.max_pages, playwright_max_depth: opts.max_depth,
+    playwright_auth_state: opts.auth_state, playwright_auth_state_b: opts.auth_state_b,
+    playwright_safe_mode: opts.safe_mode, playwright_test_xss: opts.test_xss,
+    playwright_test_race: opts.test_race, playwright_test_access: opts.test_access,
+    playwright_allow_external: opts.allow_external,
+  });
+  try { localStorage.setItem("asm_settings", JSON.stringify(cfg)); } catch(e) {}
+  closePlaywrightModal();
+  runPlaywrightRecon(cid, opts);
+}
+
+async function runPlaywrightRecon(cid, opts = null) {
+  const btn = document.getElementById(`playwright-btn-${cid}`);
+  if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+  const cfg = _currentPlaywrightDefaults();
+  const o = opts || {};
+  const pick = (k, def) => (o[k] !== undefined ? o[k] : (cfg["playwright_" + k] !== undefined ? cfg["playwright_" + k] : def));
+  const safe_mode = o.safe_mode !== undefined ? !!o.safe_mode : (cfg.playwright_safe_mode !== false);
+  try {
+    const co = allCompanies().find(c => c.id === cid);
+    const domains = Array.isArray(co?.domains) ? co.domains.filter(Boolean) : [];
+    const target = domains.length ? `https://${String(domains[0]).replace(/^https?:\/\//, "")}` : "";
+    const r = await fetch(`/api/recon/${cid}/playwright`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", ..._authHeaders()},
+      body: JSON.stringify({
+        target_url: target,
+        scope: domains,
+        max_pages: Number(pick("max_pages", 50)),
+        max_depth: Number(pick("max_depth", 3)),
+        timeout: Number(cfg.playwright_timeout || 20),
+        slow_mo: Number(cfg.playwright_slow_mo || 0),
+        user_agent: cfg.playwright_user_agent || "",
+        allow_external: !!pick("allow_external", false),
+        safe_mode: safe_mode,
+        // Active tests are only sent when safe-mode is off (backend enforces this too).
+        test_xss: !safe_mode && !!(o.test_xss ?? cfg.playwright_test_xss),
+        test_race: !safe_mode && !!(o.test_race ?? cfg.playwright_test_race),
+        test_access: !safe_mode && !!(o.test_access ?? cfg.playwright_test_access),
+        trace: !!pick("trace", false),
+        headless: o.headless !== undefined ? !!o.headless : (cfg.playwright_headless !== false),
+        auth_state: (o.auth_state ?? cfg.playwright_auth_state) || "",
+        auth_state_b: (o.auth_state_b ?? cfg.playwright_auth_state_b) || "",
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+    showPage("jobs");
+    loadJobs();
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = "▶ Playwright Recon"; }
+    alert("Erro ao iniciar Playwright Recon: " + e.message);
+  }
+}
+
+async function cancelJob(jobId) {
+  if (!confirm("Cancel this pending job?")) return;
+  try {
+    const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {method:"DELETE", headers:_authHeaders()});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(data.error || "Could not cancel job");
+      return;
+    }
+    loadJobs();
+  } catch(e) {
+    alert("Connection error: " + e.message);
+  }
+}
+
+function initJobQueueHandlers() {
+  if (window.__jobQueueHandlersReady) return;
+  window.__jobQueueHandlersReady = true;
+
+  document.addEventListener("click", event => {
+    const btn = event.target && event.target.closest ? event.target.closest("[data-job-action]") : null;
+    if (!btn) return;
+    const action = btn.dataset.jobAction;
+    if (!action) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (action === "detail") {
+      openJobDetail(btn.dataset.jobId || "");
+    } else if (action === "open-company-pipeline") {
+      openJobCompanyPipeline(btn.dataset.cid || "");
+    } else if (action === "domain-results") {
+      openDomainResults(btn.dataset.cid || "", btn.dataset.target || "");
+    } else if (action === "cancel") {
+      cancelJob(btn.dataset.jobId || "");
+    }
+  });
+
+  document.addEventListener("click", event => {
+    const card = event.target && event.target.closest ? event.target.closest("[data-job-company-id]") : null;
+    if (!card) return;
+    event.preventDefault();
+    toggleJobDrilldown(card.dataset.jobCompanyId || "");
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target && event.target.closest ? event.target.closest("[data-job-company-id]") : null;
+    if (!card) return;
+    event.preventDefault();
+    toggleJobDrilldown(card.dataset.jobCompanyId || "");
+  });
+
+  document.addEventListener("change", event => {
+    const id = event.target && event.target.id;
+    if (id === "jobs-type-filter" || id === "jobs-status-filter") {
+      _jobsPage = 1;
+      loadJobs();
+    }
+  });
+
+  document.addEventListener("click", event => {
+    const btn = event.target && event.target.closest ? event.target.closest("#jobs-badge") : null;
+    if (!btn) return;
+    event.preventDefault();
+    showPage("jobs");
+    loadJobs();
+  });
+}
+
+document.addEventListener("DOMContentLoaded", initJobQueueHandlers);
+
+// ════════════════════════════════════════════════════════════════════════
+//  SETTINGS PAGE
+// ════════════════════════════════════════════════════════════════════════
+const SETTINGS_SCHEMA = [
+  { group:"Threat Intelligence", icon:"📡", desc:"Active asset discovery & port/service data",
+    fields:[
+      {key:"shodan_key",          label:"Shodan API Key",          tag:"free",     hint:"shodan.io — free plan available"},
+      {key:"censys_api_id",       label:"Censys API ID",           tag:"free",     hint:"censys.io — free researcher plan"},
+      {key:"censys_api_secret",   label:"Censys API Secret",       tag:"free",     hint:"Paired with Censys API ID"},
+      {key:"binaryedge_key",      label:"BinaryEdge API Key",      tag:"paid",     hint:"binaryedge.io"},
+      {key:"fullhunt_key",        label:"FullHunt API Key",        tag:"free",     hint:"fullhunt.io — free tier"},
+      {key:"netlas_key",          label:"Netlas API Key",          tag:"free",     hint:"netlas.io — free tier available"},
+    ]
+  },
+  { group:"OSINT & Breach Data", icon:"💀", desc:"Credential leaks, breach intelligence, dark web",
+    fields:[
+      {key:"hibp_key",            label:"HaveIBeenPwned API Key",  tag:"paid",     hint:"haveibeenpwned.com — domain search requires paid"},
+      {key:"dehashed_key",        label:"DeHashed API Key",        tag:"paid",     hint:"dehashed.com — email/credential search"},
+      {key:"leakix_key",          label:"LeakIX API Key",          tag:"free",     hint:"leakix.net — free tier works without key"},
+      {key:"intelx_key",          label:"IntelligenceX API Key",   tag:"paid",     hint:"intelx.io — leak & darkweb OSINT"},
+    ]
+  },
+  { group:"DNS & Subdomain", icon:"🌐", desc:"Passive subdomain enumeration & DNS intelligence",
+    fields:[
+      {key:"securitytrails_key",  label:"SecurityTrails API Key",  tag:"free",     hint:"securitytrails.com — 50 req/month free"},
+      {key:"chaos_key",           label:"Chaos (ProjectDiscovery)",tag:"free",     hint:"chaos.projectdiscovery.io — free for researchers"},
+      {key:"whoisxml_key",        label:"WhoisXML API Key",        tag:"paid",     hint:"whoisxmlapi.com — reverse WHOIS (domínios irmãos da org)"},
+    ]
+  },
+  { group:"CVE & Vulnerability DB", icon:"💥", desc:"CVE intelligence from NVD — cross-reference detected technologies with known vulnerabilities",
+    fields:[
+      {key:"nvd_key",             label:"NVD API Key",             tag:"free",     hint:"nvd.nist.gov — free, 50 req/30s with key vs 5 without"},
+    ]
+  },
+  { group:"Code & Secrets", icon:"🔑", desc:"GitHub secrets, code leaks, API keys in repos",
+    fields:[
+      {key:"github_token",        label:"GitHub Token",            tag:"free",     hint:"Personal access token — avoids rate limits"},
+    ]
+  },
+  { group:"Email & Identity", icon:"✉", desc:"Email infrastructure and identity OSINT",
+    fields:[
+      {key:"hunter_key",          label:"Hunter.io API Key",       tag:"free",     hint:"hunter.io — email finder, 25 req/month free"},
+    ]
+  },
+  { group:"Search Engines", icon:"🔍", desc:"Specialized internet-wide search engines",
+    fields:[
+      {key:"virustotal_key",      label:"VirusTotal API Key",      tag:"free",     hint:"virustotal.com — free tier"},
+      {key:"fofa_email",          label:"FOFA Email",              tag:"paid",     hint:"fofa.info — Chinese internet search"},
+      {key:"fofa_key",            label:"FOFA API Key",            tag:"paid",     hint:"Paired with FOFA Email"},
+    ]
+  },
+];
+
+// ── Runtime Config Schema (separate ⚡ Performance page) ──
+const RUNTIME_SCHEMA = [
+  { group:"Runtime Engine", icon:"⚙", desc:"Pipeline workers, rate limits, and scan defaults",
+    fields:[
+      {key:"asm_job_workers",        label:"Pipeline Workers",        tag:"runtime", hint:"1",
+       tooltip:"Quantos jobs de pipeline rodam ao mesmo tempo. 1 = um domínio por vez (seguro). Aumente para acelerar scans em massa, mas cada worker extra consome mais CPU e RAM."},
+      {key:"asm_global_proc_limit",  label:"Global Process Limit",    tag:"runtime", hint:"6",
+       tooltip:"Teto máximo de subprocessos externos (nmap, nuclei, ffuf, etc) rodando simultaneamente. Se atingir esse limite, novas ferramentas esperam na fila. Reduza se a VPS travar."},
+      {key:"asm_domain_fanout",      label:"Domain Fan-out Workers",  tag:"runtime", hint:"3",
+       tooltip:"Quantos domínios cada módulo processa em paralelo. Ex: com 3, o subfinder escaneia 3 domínios ao mesmo tempo. Aumente para acelerar, mas cuidado com rate limit de APIs."},
+      {key:"asm_gate_default",       label:"Default Tool Gate",       tag:"runtime", hint:"3",
+       tooltip:"Limite de execuções simultâneas por ferramenta. Ex: com 3, no máximo 3 httpx rodam ao mesmo tempo. Ferramentas pesadas (nuclei, amass) têm limite individual menor (1)."},
+    ]
+  },
+  { group:"Scan Defaults", icon:"🎯", desc:"Default scan profile and rate mode for new scans",
+    fields:[
+      {key:"asm_rate_mode",          label:"Default Rate Mode",       tag:"runtime", hint:"balanced",
+       tooltip:"Velocidade padrão dos scans. stealth = lento e invisível (24/7). balanced = moderado. fast = rápido mas pode alertar WAFs e bloqueadores."},
+      {key:"asm_scan_mode",          label:"Default Scan Mode",       tag:"runtime", hint:"full",
+       tooltip:"Perfil padrão do pipeline. passive_bulk = só descoberta de subdomínios (seguro para milhares). full = pipeline completa (79 ferramentas, ~3h). active_light = só fases leves (headers, JS, crawl). active_heavy = só fases pesadas (portscan, nuclei)."},
+    ]
+  },
+  { group:"Watchdog", icon:"🛡", desc:"Safety limits that pause the queue before the machine crashes",
+    fields:[
+      {key:"asm_watchdog_max_load",  label:"Max System Load",         tag:"runtime", hint:"4.0",
+       tooltip:"Se a carga do sistema (load average) ultrapassar esse valor, o watchdog pausa a fila de jobs para evitar travamento da máquina. Ajuste conforme o número de CPUs."},
+      {key:"asm_watchdog_min_mem_mb",label:"Min Free RAM (MB)",       tag:"runtime", hint:"1536",
+       tooltip:"Se a memória RAM livre cair abaixo desse valor, o watchdog pausa a fila. Aumente se tiver mais RAM disponível, reduza se for uma VPS pequena."},
+      {key:"asm_watchdog_max_procs", label:"Max Recon Processes",     tag:"runtime", hint:"10",
+       tooltip:"Se o número de processos de recon (nmap, nuclei, subfinder, etc) ultrapassar esse valor, o watchdog pausa a fila. Evita fork bombs e travamentos."},
+    ]
+  },
+];
+
+let _settingsData = {};
+let _playwrightDefaults = {};
+let _toolsData = [];
+
+// Runtime config defaults (mirrors restart_server.sh)
+const _RUNTIME_DEFAULTS = {
+  asm_job_workers: "1",
+  asm_global_proc_limit: "6",
+  asm_domain_fanout: "3",
+  asm_gate_default: "3",
+  asm_rate_mode: "balanced",
+  asm_scan_mode: "full",
+  asm_watchdog_max_load: "4.0",
+  asm_watchdog_min_mem_mb: "1536",
+  asm_watchdog_max_procs: "10",
+};
+
+// Fill runtime defaults from env if available (injected at page load)
+if (typeof ASM !== 'undefined' && ASM.runtimeConfig) {
+  Object.assign(_RUNTIME_DEFAULTS, ASM.runtimeConfig);
+}
+
+const PLAYWRIGHT_SETTING_KEYS = [
+  "playwright_auto_run",
+  "playwright_safe_mode",
+  "playwright_headless",
+  "playwright_allow_external",
+  "playwright_trace",
+  "playwright_max_pages",
+  "playwright_max_depth",
+  "playwright_timeout",
+  "playwright_slow_mo",
+  "playwright_user_agent",
+  "playwright_auth_state",
+  "playwright_auth_state_b",
+  "playwright_test_xss",
+  "playwright_test_race",
+  "playwright_test_access",
+];
+
+function _toolId(name) {
+  return String(name || "").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function _boolish(v, def = false) {
+  if (v === undefined || v === null || v === "") return def;
+  if (typeof v === "boolean") return v;
+  const t = String(v).trim().toLowerCase();
+  if (["1", "true", "yes", "y", "on"].includes(t)) return true;
+  if (["0", "false", "no", "n", "off"].includes(t)) return false;
+  return def;
+}
+
+function _intish(v, def) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+}
+
+function _syncPlaywrightDefaults(raw) {
+  const next = {};
+  for (const key of PLAYWRIGHT_SETTING_KEYS) {
+    if (raw && Object.prototype.hasOwnProperty.call(raw, key)) {
+      next[key] = raw[key];
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(_playwrightDefaults, key)) {
+      next[key] = _playwrightDefaults[key];
+    }
+  }
+  _playwrightDefaults = next;
+  return _playwrightDefaults;
+}
+
+function _currentPlaywrightDefaults() {
+  const cfg = { ..._playwrightDefaults };
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem("asm_settings") || "{}"); } catch(e) {}
+  for (const key of PLAYWRIGHT_SETTING_KEYS) {
+    if (cfg[key] === undefined || cfg[key] === null || cfg[key] === "") {
+      if (local[key] !== undefined) cfg[key] = local[key];
+    }
+  }
+  return cfg;
+}
+
+async function loadPlaywrightDefaults() {
+  if (!SERVER_MODE) return _currentPlaywrightDefaults();
+  try {
+    const r = await fetch("/api/settings");
+    if (r.ok) {
+      const data = await r.json();
+      _settingsData = data;
+      _syncPlaywrightDefaults(data);
+    }
+  } catch(e) {}
+  return _currentPlaywrightDefaults();
+}
+
+function renderSettingsGrid() {
+  const grid = document.getElementById("settings-grid");
+  if (!grid) return;
+  grid.innerHTML = SETTINGS_SCHEMA.map(group => `
+<div class="settings-group">
+  <div class="sg-title">${group.icon} ${group.group}</div>
+  <div class="sg-desc">${group.desc}</div>
+  ${group.fields.map(f => {
+    const val = _settingsData[f.key] || "";
+    return `
+  <div class="sg-field">
+    <div class="sg-label">
+      <span>${f.label}</span>
+      <span class="sg-tag ${f.tag}">${f.tag}</span>
+    </div>
+    <div class="sg-input-wrap">
+      <input type="password" class="sg-input${val? " has-value":""}"
+             id="sg-${f.key}" value="${esc(val)}"
+             placeholder="${esc(f.hint)}"
+             oninput="document.getElementById('settings-save-status').textContent='Unsaved changes';document.getElementById('settings-save-status').className='save-status'">
+      <button class="sg-toggle" onclick="toggleSgVisibility('sg-${f.key}',this)" title="Show/hide">👁</button>
+    </div>
+  </div>`;
+  }).join("")}
+</div>`).join("");
+}
+
+// ── Runtime Config (⚡ Performance page) ──
+
+function renderRuntimeGrid() {
+  const grid = document.getElementById("runtime-grid");
+  if (!grid) return;
+  grid.innerHTML = RUNTIME_SCHEMA.map(group => `
+<div class="settings-group">
+  <div class="sg-title">${group.icon} ${group.group}</div>
+  <div class="sg-desc">${group.desc}</div>
+  ${group.fields.map(f => {
+    const val = _settingsData[f.key] || _RUNTIME_DEFAULTS[f.key] || "";
+    const tip = f.tooltip ? f.tooltip.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : "";
+    return `
+  <div class="sg-field">
+    <div class="sg-label"${tip ? ` title="${tip}"` : ""}>
+      <span>${f.label}</span>
+      <span class="sg-tag ${f.tag}">${f.tag}</span>
+    </div>
+    <div class="sg-input-wrap">
+      <input type="text" class="sg-input${val? " has-value":""}"
+             id="rt-${f.key}" value="${esc(val)}"
+             placeholder="${esc(f.hint)}"${tip ? ` title="${tip}"` : ""}
+             oninput="document.getElementById('runtime-save-status').textContent='Unsaved changes';document.getElementById('runtime-save-status').className='save-status'">
+    </div>
+  </div>`;
+  }).join("")}
+</div>`).join("");
+}
+
+async function loadRuntimeConfig() {
+  if (!SERVER_MODE) { renderRuntimeGrid(); return; }
+  try {
+    const r = await fetch("/api/settings");
+    if (r.ok) {
+      _settingsData = await r.json();
+    }
+  } catch(e) {}
+  renderRuntimeGrid();
+  document.getElementById("runtime-save-status").textContent = "Config loaded from server";
+  document.getElementById("runtime-save-status").className = "save-status ok";
+}
+
+async function saveRuntimeConfig() {
+  const data = {};
+  RUNTIME_SCHEMA.forEach(g => g.fields.forEach(f => {
+    const el = document.getElementById("rt-" + f.key);
+    if (el && el.value.trim()) data[f.key] = el.value.trim();
+  }));
+  const st = document.getElementById("runtime-save-status");
+  try {
+    const r = await fetch("/api/settings", {
+      method: "POST", body: JSON.stringify(data),
+      headers: _authHeaders(),
+    });
+    if (r.ok) {
+      st.textContent = "✓ Config saved — restart server to apply";
+      st.className = "save-status ok";
+    } else {
+      const d = await r.json();
+      throw new Error(d.error || "Save failed");
+    }
+  } catch(e) {
+    st.textContent = "Error: " + e.message;
+    st.className = "save-status";
+  }
+}
+
+function toggleSgVisibility(id, btn) {
+  const el = document.getElementById(id);
+  el.type = el.type === "password" ? "text" : "password";
+  btn.style.opacity = el.type === "text" ? "1" : "0.4";
+}
+
+async function loadSettings() {
+  if (!SERVER_MODE) { renderSettingsGrid(); return; }
+  try {
+    const r = await fetch("/api/settings");
+    if (r.ok) {
+      _settingsData = await r.json();
+      _syncPlaywrightDefaults(_settingsData);
+    }
+  } catch(e) {}
+  renderSettingsGrid();
+  document.getElementById("settings-save-status").textContent = "Settings loaded from server";
+  document.getElementById("settings-save-status").className = "save-status ok";
+}
+
+async function saveSettings() {
+  const data = {};
+  SETTINGS_SCHEMA.forEach(g => g.fields.forEach(f => {
+    const el = document.getElementById("sg-"+f.key);
+    if (el) data[f.key] = el.value.trim();
+  }));
+  _settingsData = data;
+  const st = document.getElementById("settings-save-status");
+  if (!SERVER_MODE) { st.textContent = "Demo mode — settings not persisted"; st.className="save-status err"; return; }
+  try {
+    const r = await fetch("/api/settings", {method:"POST", body:JSON.stringify(data), headers: _authHeaders()});
+    if (r.ok) { st.textContent = "✓ Settings saved"; st.className="save-status ok"; }
+    else { st.textContent = "Error saving settings"; st.className="save-status err"; }
+  } catch(e) { st.textContent = "Connection error"; st.className="save-status err"; }
+}
+
+function _toolMatchesFilter(tool, categoryFilter, availFilter) {
+  const category = String(tool.category || "");
+  const available = !!tool.available;
+  if (categoryFilter && category !== categoryFilter) return false;
+  if (availFilter === "available" || availFilter === "enabled") return available;
+  if (availFilter === "missing" || availFilter === "disabled") return !available;
+  return true;
+}
+
+function _renderPlaywrightDefaultsCard() {
+  const cfg = _currentPlaywrightDefaults();
+  const rows = [
+    {label:"Auto run after scan", key:"playwright_auto_run", type:"checkbox", def:true},
+    {label:"Safe mode", key:"playwright_safe_mode", type:"checkbox", def:true},
+    {label:"Headless", key:"playwright_headless", type:"checkbox", def:true},
+    {label:"Allow external", key:"playwright_allow_external", type:"checkbox", def:false},
+    {label:"Trace", key:"playwright_trace", type:"checkbox", def:false},
+    {label:"Max pages", key:"playwright_max_pages", type:"number", def:50},
+    {label:"Max depth", key:"playwright_max_depth", type:"number", def:3},
+    {label:"Timeout (s)", key:"playwright_timeout", type:"number", def:20},
+    {label:"Slow mo (ms)", key:"playwright_slow_mo", type:"number", def:0},
+    {label:"User agent", key:"playwright_user_agent", type:"text", def:""},
+    {label:"Auth state", key:"playwright_auth_state", type:"text", def:""},
+    {label:"Auth state B", key:"playwright_auth_state_b", type:"text", def:""},
+  ];
+  const active = [
+    ["Test XSS", "playwright_test_xss"],
+    ["Test Race", "playwright_test_race"],
+    ["Test Access", "playwright_test_access"],
+  ];
+  return `
+    <div class="section-shell" style="margin-bottom:18px">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Playwright Defaults</div>
+          <div class="section-title">Default browser recon profile</div>
+          <div class="section-sub">These settings are used automatically after a completed scan and also prefill the manual Playwright run dialog.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span id="tools-pw-save-status" class="save-status"></span>
+          <button class="btn btn-secondary btn-sm" onclick="loadToolsStatus()">↺ Reload</button>
+          <button class="btn btn-primary btn-sm" onclick="savePlaywrightDefaults()">Save Defaults</button>
+        </div>
+      </div>
+      <div class="stats-row" style="margin-bottom:12px">
+        ${rows.map(({label, key, type, def}) => {
+          const value = cfg[key];
+          const checked = type === "checkbox" ? (_boolish(value, def) ? "checked" : "") : "";
+          const display = type === "checkbox"
+            ? `<label class="toggle" style="margin-top:6px"><input type="checkbox" id="tools-${key}" ${checked}><span class="slider"></span></label>`
+            : `<input class="fi" id="tools-${key}" type="${type}" value="${esc(value ?? def ?? "")}" style="width:100%;margin-top:6px">`;
+          return `
+            <div class="stat-card" style="min-width:180px;flex:1">
+              <div class="stat-label">${esc(label)}</div>
+              ${display}
+            </div>`;
+        }).join("")}
+      </div>
+      <div class="stats-row" style="margin-bottom:0;gap:10px">
+        ${active.map(([label, key]) => {
+          const checked = _boolish(cfg[key], false) ? "checked" : "";
+          return `
+            <div class="stat-card" style="min-width:180px;flex:1">
+              <div class="stat-label">${esc(label)}</div>
+              <label class="toggle" style="margin-top:6px"><input type="checkbox" id="tools-${key}" ${checked}><span class="slider"></span></label>
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function _renderToolCard(tool, defaultTarget) {
+  const id = _toolId(tool.name);
+  const available = !!tool.available;
+  const gate = tool.gate || {};
+  const gateLabel = gate ? `${Number(gate.active || 0)}/${Number(gate.limit || 1)}` : "";
+  const statusLabel = available ? "Installed" : "Missing";
+  const requires = tool.requires_key ? `<span class="chip">key: ${esc(tool.requires_key)}</span>` : "";
+  const gateChip = gate ? `<span class="chip">gate ${esc(gateLabel)}</span>` : "";
+  return `
+    <div class="section-shell" style="padding:14px 14px 12px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+        <div style="min-width:0">
+          <div class="section-title" style="font-size:1rem;line-height:1.1">${esc(tool.name)}</div>
+          <div class="section-sub" style="margin-top:4px">${esc(tool.description || "")}</div>
+        </div>
+        <span class="chip" style="background:${available ? "rgba(0,255,136,.12)" : "rgba(255,51,85,.12)"};color:${available ? "var(--green)" : "var(--red)"};border-color:${available ? "rgba(0,255,136,.2)" : "rgba(255,51,85,.2)"}">${statusLabel}</span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 12px">
+        <span class="chip">${esc(String(tool.category || ""))}</span>
+        <span class="chip">${esc(String(tool.type || ""))}</span>
+        <span class="chip">${esc(String(tool.version || ""))}</span>
+        ${requires}
+        ${gateChip}
+      </div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center">
+        <input class="fi" id="ti-${id}" value="${esc(defaultTarget || "")}" placeholder="Target domain or IP">
+        <button class="btn btn-primary btn-sm" id="tb-${id}" ${available ? "" : "disabled"} onclick="runTool('${esc(tool.name)}')">Run</button>
+      </div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <code id="ic-${id}" style="font-size:.68rem;white-space:normal;word-break:break-word;flex:1;background:var(--bg1);padding:8px 10px;border:1px solid var(--border);border-radius:8px">${esc(tool.install_cmd || "—")}</code>
+        <button class="btn btn-secondary btn-sm" onclick="copyInstall('${esc(tool.name)}')">Copy</button>
+      </div>
+      <div id="tr-${id}" class="tc-result" style="margin-top:10px"></div>
+    </div>`;
+}
+
+function renderToolsCatalog() {
+  const grid = document.getElementById("tools-grid");
+  const stats = document.getElementById("tools-stats-strip");
+  const pwCfg = document.getElementById("tools-playwright-config");
+  if (!grid || !stats || !pwCfg) return;
+
+  const categoryFilter = document.getElementById("tools-cat-filter")?.value || "";
+  const availFilter = document.getElementById("tools-avail-filter")?.value || "";
+  const defaultTarget = (allCompanies().find(c => c.id === state.currentId)?.domains || [])[0]
+    || (allCompanies()[0]?.domains || [])[0]
+    || "";
+  const filtered = _toolsData.filter(tool => _toolMatchesFilter(tool, categoryFilter, availFilter));
+
+  const total = _toolsData.length;
+  const available = _toolsData.filter(t => t.available).length;
+  const missing = total - available;
+  const apiCount = _toolsData.filter(t => String(t.type || "") === "api").length;
+  const cliCount = total - apiCount;
+
+  stats.innerHTML = [
+    ["Total", total, "var(--cyan)"],
+    ["Installed", available, "var(--green)"],
+    ["Missing", missing, "var(--red)"],
+    ["API tools", apiCount, "var(--blue)"],
+    ["CLI tools", cliCount, "var(--yellow)"],
+  ].map(([label, value, color]) => `
+    <div class="stat-card" style="min-width:130px;flex:1">
+      <div class="stat-value" style="color:${color}">${value}</div>
+      <div class="stat-label">${label}</div>
+    </div>`).join("");
+
+  pwCfg.innerHTML = _renderPlaywrightDefaultsCard();
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>No tools match the current filters</b> Try another category or availability filter.</div>`;
+    return;
+  }
+  grid.innerHTML = filtered.map(tool => _renderToolCard(tool, defaultTarget)).join("");
+}
+
+async function loadToolsStatus() {
+  const grid = document.getElementById("tools-grid");
+  const stats = document.getElementById("tools-stats-strip");
+  const pwCfg = document.getElementById("tools-playwright-config");
+  if (grid) grid.innerHTML = `<div class="skel skel-card"></div><div class="skel skel-card"></div>`;
+  if (stats) stats.innerHTML = `<div class="skel skel-card"></div>`;
+  if (pwCfg) pwCfg.innerHTML = `<div class="skel skel-card"></div>`;
+
+  if (!SERVER_MODE) {
+    _toolsData = [];
+    renderToolsCatalog();
+    return;
+  }
+
+  try {
+    const [toolsResp, settingsResp] = await Promise.all([
+      fetch("/api/tools/status", {headers:_authHeaders()}),
+      fetch("/api/settings", {headers:_authHeaders()}),
+    ]);
+    if (settingsResp.ok) {
+      const settings = await settingsResp.json();
+      _settingsData = settings;
+      _syncPlaywrightDefaults(settings);
+    }
+    if (!toolsResp.ok) throw await _apiErr(toolsResp);
+    _toolsData = await toolsResp.json();
+    renderToolsCatalog();
+  } catch(e) {
+    if (grid) grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><b>Tools unavailable</b> ${esc(e.message)}</div>`;
+    if (stats) stats.innerHTML = "";
+    if (pwCfg) pwCfg.innerHTML = "";
+  }
+}
+
+function filterTools() {
+  renderToolsCatalog();
+}
+
+async function savePlaywrightDefaults() {
+  if (!SERVER_MODE) return;
+  const cfg = {
+    playwright_auto_run: document.getElementById("tools-playwright_auto_run")?.checked ?? true,
+    playwright_safe_mode: document.getElementById("tools-playwright_safe_mode")?.checked ?? true,
+    playwright_headless: document.getElementById("tools-playwright_headless")?.checked ?? true,
+    playwright_allow_external: document.getElementById("tools-playwright_allow_external")?.checked ?? false,
+    playwright_trace: document.getElementById("tools-playwright_trace")?.checked ?? false,
+    playwright_max_pages: Number(document.getElementById("tools-playwright_max_pages")?.value || 50),
+    playwright_max_depth: Number(document.getElementById("tools-playwright_max_depth")?.value || 3),
+    playwright_timeout: Number(document.getElementById("tools-playwright_timeout")?.value || 20),
+    playwright_slow_mo: Number(document.getElementById("tools-playwright_slow_mo")?.value || 0),
+    playwright_user_agent: document.getElementById("tools-playwright_user_agent")?.value.trim() || "",
+    playwright_auth_state: document.getElementById("tools-playwright_auth_state")?.value.trim() || "",
+    playwright_auth_state_b: document.getElementById("tools-playwright_auth_state_b")?.value.trim() || "",
+    playwright_test_xss: document.getElementById("tools-playwright_test_xss")?.checked ?? false,
+    playwright_test_race: document.getElementById("tools-playwright_test_race")?.checked ?? false,
+    playwright_test_access: document.getElementById("tools-playwright_test_access")?.checked ?? false,
+  };
+  try {
+    const r = await fetch("/api/settings", {
+      method:"POST",
+      headers: {"Content-Type":"application/json", ..._authHeaders()},
+      body: JSON.stringify(cfg),
+    });
+    if (!r.ok) throw await _apiErr(r);
+    _settingsData = { ..._settingsData, ...cfg };
+    _syncPlaywrightDefaults(cfg);
+    try {
+      const local = JSON.parse(localStorage.getItem("asm_settings") || "{}");
+      localStorage.setItem("asm_settings", JSON.stringify({ ...local, ...cfg }));
+    } catch(e) {}
+    const status = document.getElementById("tools-pw-save-status");
+    if (status) {
+      status.textContent = "✓ Playwright defaults saved";
+      status.className = "save-status ok";
+    }
+  } catch(e) {
+    const status = document.getElementById("tools-pw-save-status");
+    if (status) {
+      status.textContent = "Error saving Playwright defaults";
+      status.className = "save-status err";
+    }
+    alert("Error saving Playwright defaults: " + e.message);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ADMIN CRUD
+// ════════════════════════════════════════════════════════════════════════
+async function loadAdmins() {
+  if (!SERVER_MODE) {
+    document.getElementById("admins-tbody").innerHTML = `<tr><td colspan="6" style="color:var(--text3);text-align:center;padding:20px">Server mode required</td></tr>`;
+    return;
+  }
+  try {
+    const r = await fetch("/api/admins");
+    if (!r.ok) return;
+    const admins = await r.json();
+    renderAdminsTable(admins);
+  } catch(e) {}
+}
+
+function renderAdminsTable(admins) {
+  const tbody = document.getElementById("admins-tbody");
+  tbody.innerHTML = admins.map(a => {
+    const scopeLabel = (a.scoped_companies && a.scoped_companies.length) ? `${a.scoped_companies.length} company(s)` : "All";
+    return `
+<tr>
+  <td><b>${a.username}</b></td>
+  <td style="color:var(--text2)">${a.email || "—"}</td>
+  <td><span class="role-badge ${a.role}">${a.role.replace("_"," ")}</span></td>
+  <td style="color:var(--text3);font-size:0.65rem">${scopeLabel}</td>
+  <td style="color:var(--text3);font-size:0.65rem">${(a.created_at||"").slice(0,10)}</td>
+  <td style="color:var(--text3);font-size:0.65rem">${(a.last_login||"—").slice(0,16).replace("T"," ")}</td>
+  <td>
+    <div class="admin-actions">
+      ${a.role !== 'super_admin' ? `<button class="btn btn-secondary btn-icon" onclick="openAdminModal('${a.id}','${a.username}','${a.email||""}','${a.role}','${JSON.stringify(a.scoped_companies||[]).replace(/"/g,'&quot;')}')">Edit</button>` : ''}
+      ${a.id !== authUser?.admin_id ? `<button class="btn btn-icon" style="background:var(--red-dim);color:#fb7185;border:1px solid rgba(244,63,94,0.2)" onclick="deleteAdmin('${a.id}','${a.username}')">Delete</button>` : `<span style="font-size:0.65rem;color:var(--text3);padding:4px 8px">you</span>`}
+    </div>
+  </td>
+</tr>`;}).join("") || `<tr><td colspan="7" style="color:var(--text3);text-align:center;padding:20px">No admins found</td></tr>`;
+}
+
+function onAdminRoleChange() {
+  const role = document.getElementById("admin-modal-role").value;
+  const scopeField = document.getElementById("admin-scope-field");
+  scopeField.style.display = (role === "super_admin") ? "none" : "";
+}
+
+function openAdminModal(id, username, email, role, scopedJson) {
+  const isNew = !id;
+  document.getElementById("admin-modal-title").textContent = isNew ? "Add Admin" : "Edit Admin";
+  document.getElementById("admin-modal-id").value    = id || "";
+  document.getElementById("admin-modal-user").value  = username || "";
+  document.getElementById("admin-modal-user").disabled = !isNew;
+  document.getElementById("admin-modal-email").value = email || "";
+  document.getElementById("admin-modal-role").value  = role || "analyst";
+  document.getElementById("admin-modal-pw-field").style.display   = isNew ? "" : "none";
+  document.getElementById("admin-modal-pw-change-toggle").style.display = isNew ? "none" : "";
+  document.getElementById("admin-modal-pw").value = "";
+  document.getElementById("admin-change-pw-cb").checked = false;
+  document.getElementById("admin-new-pw-wrap").style.display = "none";
+
+  // Populate company scope checkboxes
+  let scoped = [];
+  try { if (scopedJson) scoped = JSON.parse(scopedJson); } catch(e) {}
+  if (!Array.isArray(scoped)) scoped = [];
+  const grid = document.getElementById("admin-scope-grid");
+  grid.innerHTML = (allCompanies() || []).map(c => {
+    const checked = scoped.includes(c.id) ? "checked" : "";
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text2);cursor:pointer;padding:2px 4px;border-radius:4px">
+      <input type="checkbox" value="${c.id}" ${checked} class="admin-scope-cb">
+      ${c.name}
+    </label>`;
+  }).join("") || '<span style="color:var(--text3);font-size:0.72rem">No companies yet</span>';
+
+  onAdminRoleChange();
+  document.getElementById("modal-admin").style.display = "flex";
+}
+
+function closeAdminModal() { document.getElementById("modal-admin").style.display = "none"; }
+
+function toggleChangePw(checked) {
+  document.getElementById("admin-new-pw-wrap").style.display = checked ? "" : "none";
+}
+
+async function saveAdmin() {
+  const id    = document.getElementById("admin-modal-id").value;
+  const isNew = !id;
+  const role  = document.getElementById("admin-modal-role").value;
+  const body  = {
+    username: document.getElementById("admin-modal-user").value.trim(),
+    email:    document.getElementById("admin-modal-email").value.trim(),
+    role:     role,
+  };
+
+  // Collect scoped companies (only for analyst role)
+  if (role !== "super_admin") {
+    const cbs = document.querySelectorAll(".admin-scope-cb:checked");
+    body.scoped_companies = Array.from(cbs).map(cb => cb.value);
+  }
+
+  if (isNew) {
+    body.password = document.getElementById("admin-modal-pw").value;
+    if (!body.username || !body.password) { alert("Username and password are required"); return; }
+  } else {
+    if (document.getElementById("admin-change-pw-cb").checked) {
+      body.password = document.getElementById("admin-modal-pw2").value;
+      if (!body.password) { alert("Enter new password"); return; }
+    }
+  }
+
+  try {
+    const url    = isNew ? "/api/admins" : `/api/admins/${id}`;
+    const method = isNew ? "POST"        : "PUT";
+    const r = await fetch(url, {method, body:JSON.stringify(body), headers: _authHeaders()});
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || "Error saving admin"); return; }
+    closeAdminModal();
+    loadAdmins();
+  } catch(e) { alert("Connection error"); }
+}
+
+async function deleteAdmin(id, username) {
+  if (!confirm(`Delete admin "${username}"? This cannot be undone.`)) return;
+  try {
+    const r = await fetch(`/api/admins/${id}`, {method:"DELETE"});
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || "Error"); return; }
+    loadAdmins();
+  } catch(e) { alert("Connection error"); }
+}
+
+
+const _phudModTimes = {};   // Track module start/end for Gantt
+const _phudParticles = {};  // Track animation frames
+
+const PIPELINE_PHASES_DEF = [
+  {id:"passive",      label:"PASSIVE",    icon:"◉", color:"#00e5ff", mods:["subfinder","assetfinder","theharvester","dns","email","certs","asn","asnmap","related","typosquat"]},
+  {id:"intel",        label:"INTEL",      icon:"⚡", color:"#fbbf24", mods:["shodan","breach","grep_app","certstream"]},
+  {id:"supply_chain", label:"SUPPLY",     icon:"☁",  color:"#fb923c", mods:["dep_confusion","cloud"]},
+  {id:"cleanup",      label:"CLEANUP",    icon:"🧹", color:"#4ade80", mods:["cleanup"]},
+  {id:"validation",   label:"VALIDATION", icon:"🔡", color:"#818cf8", mods:["dns_brute","leaks"]},
+  {id:"profiling",    label:"PROFILING",  icon:"🔬", color:"#00e5ff", mods:["headers","waf","wappalyzer","wappalyzergo","whatweb"]},
+  {id:"js_tech",      label:"JS/TECH",    icon:"📜", color:"#fbbf24", mods:["js","js_endpoints","js_secrets"]},
+  {id:"crawl",        label:"CRAWL",      icon:"🕷", color:"#4ade80", mods:["wayback","urlfinder","screenshot","gowitness","favicon_hunt"]},
+  {id:"enum_active",  label:"ENUM",       icon:"⚙",  color:"#fb923c", mods:["vhost","api_panels","param_mine"]},
+  {id:"portscan",     label:"PORTSCAN",   icon:"🔭", color:"#f43f5e", mods:["portscan","cloudlist"]},
+  {id:"services",     label:"SERVICES",   icon:"🔌", color:"#fb923c", mods:["cms_scan","services"]},
+  {id:"vulnscan",     label:"VULNSCAN",   icon:"⚠",  color:"#f43f5e", mods:["takeover","subjack","cve","cloud_enum","cors_scan","infra_exposure","graphql","browser_recon","supply_chain"]},
+];
+
+const _MOD_TO_PHASE = {};
+PIPELINE_PHASES_DEF.forEach(ph => ph.mods.forEach(m => (_MOD_TO_PHASE[m] = ph.id)));
+
+function _phudPhaseStatus(phId, modMap) {
+  const ph = PIPELINE_PHASES_DEF.find(p => p.id === phId);
+  if (!ph) return "idle";
+  const statuses = ph.mods.map(m => modMap[m] || "not_run");
+  if (statuses.some(s => s === "running"))  return "active";
+  if (statuses.every(s => s === "skipped")) return "skipped";
+  if (statuses.some(s => s === "done"))     return "done";
+  if (statuses.some(s => s === "error"))    return "error";
+  return "idle";
+}
+
+function _phudPhaseToolLabel(ph, modMap) {
+  const running = ph.mods.find(m => modMap[m] === "running");
+  if (running) return running;
+  const done = ph.mods.find(m => modMap[m] === "done");
+  if (done) return done;
+  const err = ph.mods.find(m => modMap[m] === "error");
+  if (err) return err;
+  const skip = ph.mods.find(m => modMap[m] === "skipped");
+  if (skip) return skip;
+  const seen = ph.mods.find(m => modMap[m] && modMap[m] !== "not_run");
+  return seen || ph.id;
+}
+
+function _pipelineCardLiveInfo(cid) {
+  const ps = pipelineState[cid];
+  if (!ps || (ps.status !== "queued" && ps.status !== "running")) return null;
+
+  const modMap = {};
+  (ps.phases || []).forEach(ph => (ph.modules || []).forEach(m => {
+    if (m.status && m.status !== "not_run") modMap[m.module] = m.status;
+  }));
+  const rs = reconState[cid] || {};
+  Object.keys(rs).forEach(m => {
+    if (rs[m] && rs[m].status) modMap[m] = rs[m].status;
+  });
+
+  const activeTool =
+    Object.keys(modMap).find(m => modMap[m] === "running") ||
+    (ps.status === "running" ? Object.keys(modMap).find(m => modMap[m] === "done") : "") ||
+    Object.keys(modMap).find(m => modMap[m] === "error") ||
+    Object.keys(modMap).find(m => modMap[m] === "skipped") ||
+    "";
+
+  const phaseId = activeTool ? _MOD_TO_PHASE[activeTool] : "";
+  const phase = phaseId ? PIPELINE_PHASES_DEF.find(p => p.id === phaseId) : null;
+  const phaseLabel = phase ? phase.label : (ps.phase_label || "");
+  const label = ps.status === "queued"
+    ? (activeTool ? `Queued · ${activeTool}${phaseLabel ? ` · ${phaseLabel}` : ""}` : "Queued · waiting for worker")
+    : (activeTool ? `Running · ${activeTool}${phaseLabel ? ` · ${phaseLabel}` : ""}` : "Running · starting");
+
+  return {
+    status: ps.status,
+    tool: activeTool,
+    phase: phaseLabel,
+    label,
+    jobId: ps.job_id || "",
+  };
+}
+
+function _phudStartParticles(cid) {
+  const canvas = document.getElementById(`phud-canvas-${cid}`);
+  if (!canvas) return;
+  const ctx = canvas.getContext("2d");
+  function resize() { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; }
+  resize();
+  new ResizeObserver(resize).observe(canvas.parentElement);
+  const pts = Array.from({length:45}, () => ({
+    x:Math.random(), y:Math.random(),
+    vx:(Math.random()-.5)*.0005, vy:(Math.random()-.5)*.0005,
+    r:Math.random()*.8+.2, a:Math.random()*.3+.04,
+  }));
+  function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pts.forEach(p => {
+      const x = p.x*canvas.width, y = p.y*canvas.height;
+      ctx.beginPath(); ctx.arc(x,y,p.r,0,Math.PI*2);
+      ctx.fillStyle = `rgba(0,180,255,${p.a})`; ctx.fill();
+      p.x += p.vx; p.y += p.vy;
+      if(p.x<0)p.x=1; if(p.x>1)p.x=0;
+      if(p.y<0)p.y=1; if(p.y>1)p.y=0;
+    });
+    _phudParticles[cid] = requestAnimationFrame(draw);
+  }
+  if(_phudParticles[cid]) cancelAnimationFrame(_phudParticles[cid]);
+  draw();
+}
+
+function _phudStopParticles(cid) {
+  if(_phudParticles[cid]) { cancelAnimationFrame(_phudParticles[cid]); delete _phudParticles[cid]; }
+}
+
+function renderPipelineStatus(cid) {
+  const el = document.getElementById(`pipeline-status-${cid}`);
+  if (!el) return;
+  const ps = pipelineState[cid];
+  if (!ps) { el.innerHTML = ""; _phudStopParticles(cid); return; }
+
+  // Build module map from pipeline state phases
+  const modMap = {};
+  (ps.phases||[]).forEach(ph => ph.modules.forEach(m => { modMap[m.module] = m.status; }));
+  // Also fill from reconState (live updates)
+  const rs = reconState[cid] || {};
+  Object.keys(rs).forEach(m => { if(rs[m].status) modMap[m] = rs[m].status; });
+
+  // Track module start/end times for Gantt
+  if (!_phudModTimes[cid]) _phudModTimes[cid] = {};
+  const mt = _phudModTimes[cid];
+  const now = Date.now();
+  if (!mt._scanStart) mt._scanStart = now;
+  Object.keys(modMap).forEach(m => {
+    const st = modMap[m];
+    if (st === "running" && !mt[m]) mt[m] = {start: now, end: null};
+    if ((st === "done" || st === "error" || st === "skipped") && mt[m] && !mt[m].end) mt[m].end = now;
+    if (!mt[m] && (st === "done" || st === "error")) mt[m] = {start: mt._scanStart, end: now};
+  });
+
+  const isRunning = ps.status === "running";
+  const isQueued  = ps.status === "queued";
+  const isDone    = ps.status === "done";
+  const modeIcon  = {stealth:"🧊",balanced:"⚖️",fast:"🚀"}[ps.mode||"stealth"] || "🧊";
+  const cfCoverage = ps.cloudflare_coverage || 0;
+
+  // ── Phase node timeline ──────────────────────────────────────────────────
+  const totalPhases  = PIPELINE_PHASES_DEF.length;
+  const activeIdx    = PIPELINE_PHASES_DEF.findIndex(p => _phudPhaseStatus(p.id, modMap) === "active");
+  const donePhases   = PIPELINE_PHASES_DEF.filter(p => _phudPhaseStatus(p.id, modMap) === "done").length;
+  const progress     = activeIdx >= 0 ? (activeIdx + .5) / totalPhases : donePhases / totalPhases;
+  const glowRight    = Math.round((1 - progress) * 100);
+
+  const nodesHtml = PIPELINE_PHASES_DEF.map(ph => {
+    const st = _phudPhaseStatus(ph.id, modMap);
+    const dot = st === "done" ? "✓" : ph.icon;
+    const toolLabel = _phudPhaseToolLabel(ph, modMap);
+    return `<div class="phud-node ${st}" title="${ph.label} · ${toolLabel}">
+      <div class="phud-node-dot">${dot}</div>
+      <div class="phud-node-lbl">${esc(toolLabel)}</div>
+    </div>`;
+  }).join("");
+
+  // ── Gantt rows ───────────────────────────────────────────────────────────
+  const scanDuration = now - (mt._scanStart || now);
+  const totalMs = Math.max(scanDuration, 5000);
+
+  let ganttHtml = "";
+  PIPELINE_PHASES_DEF.forEach(ph => {
+    const phSt = _phudPhaseStatus(ph.id, modMap);
+    const modsWithData = ph.mods.filter(m => modMap[m] && modMap[m] !== "not_run");
+    if (!modsWithData.length && phSt === "idle") return;
+
+    const phCls = phSt === "active" ? "ph-active" : phSt === "done" ? "ph-done" : phSt === "skipped" ? "ph-skip" : "";
+    const toolLabel = _phudPhaseToolLabel(ph, modMap);
+    ganttHtml += `<div class="phud-phase-hdr ${phCls}"><div class="phud-ph-dot" style="background:${ph.color};opacity:.7"></div>${esc(toolLabel)}<span style="margin-left:8px;color:var(--text3);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em">${esc(ph.label)}</span></div>`;
+
+    ph.mods.forEach(m => {
+      const st = modMap[m] || "not_run";
+      if (st === "not_run") return;
+      const t = mt[m] || {};
+      const startOff = t.start ? ((t.start - mt._scanStart) / totalMs * 100).toFixed(1) : "0";
+      const endOff   = t.end   ? ((t.end   - mt._scanStart) / totalMs * 100).toFixed(1) :
+                       st === "running"  ? "100" : startOff;
+      const width    = Math.max(parseFloat(endOff) - parseFloat(startOff), 1).toFixed(1);
+      const durMs    = t.end ? t.end - (t.start||mt._scanStart) : st === "running" ? now - (t.start||mt._scanStart) : 0;
+      const durStr   = durMs > 60000 ? `${Math.round(durMs/60000)}m` : durMs > 1000 ? `${Math.round(durMs/1000)}s` : "";
+
+      ganttHtml += `<div class="phud-gantt-row">
+        <div class="phud-gantt-lbl ${st}">${m}</div>
+        <div class="phud-gantt-track">
+          <div class="phud-gantt-bar ${st}" style="left:${startOff}%;width:${width}%">
+            <span class="phud-gantt-bar-lbl">${st === "running" ? "…" : ""}</span>
+          </div>
+        </div>
+        <div class="phud-gantt-dur">${durStr}</div>
+      </div>`;
+    });
+  });
+
+  // ── Last log line ────────────────────────────────────────────────────────
+  const logLines = ps.log || [];
+  const lastLog  = logLines.length ? logLines[logLines.length-1].msg : (isQueued ? "Waiting in queue…" : isRunning ? "Waiting for start…" : "");
+
+  // ── Cleanup badge ────────────────────────────────────────────────────────
+  const cleanupData = (ps.phases||[]).find(p => p.id === "cleanup");
+  const cleanupBadge = cleanupData && cleanupData.data?.removed > 0
+    ? `<span class="phud-badge done">🧹 -${cleanupData.data.removed} junk</span>` : "";
+  const cfBadge = cfCoverage >= 80
+    ? `<span class="phud-badge done">🛡 ${cfCoverage.toFixed(0)}% CF</span>` : "";
+  const mullvadIp = ps.mullvad_ip || "";
+  const mullvadBadge = mullvadIp
+    ? `<span class="phud-badge idle" title="Mullvad VPN — IP atual">🌐 ${mullvadIp}</span>` : "";
+
+  // ── Mullvad failures ──────────────────────────────────────────────────────
+  const mullvadFailuresHtml = (ps.mullvad_failures||[]).length ? `<div style="margin-top:6px;padding:6px;background:rgba(239,68,68,0.1);border-radius:4px;border:1px solid rgba(239,68,68,0.3)"><span style="color:var(--red);font-weight:600;font-size:.7rem">⚠ Mullvad Rotation Failures (${ps.mullvad_failures.length})</span>${ps.mullvad_failures.slice(-3).map(f=>`<div style="color:var(--text3);font-size:.65rem;margin-top:2px">${esc(f.ts||'')} · ${esc(f.phase||'')} · ${esc(f.reason||'')}</div>`).join('')}</div>` : '';
+
+  // ── Not done summary ─────────────────────────────────────────────────────
+  const notDone = (ps.not_done||[]);
+  const notDoneHtml = (isDone && notDone.length) ? `
+    <div style="margin-top:10px;padding:8px 12px;background:rgba(251,146,60,0.08);border:1px solid rgba(251,146,60,0.2);border-radius:7px;font-size:.63rem;">
+      <span style="color:var(--orange);font-weight:700;">⚠ ${notDone.length} module(s) not completed:</span>
+      <span style="color:var(--text3);margin-left:6px">${notDone.slice(0,6).map(n=>{
+        const reason = (n.reason||"").trim();
+        return reason && reason !== "not executed"
+          ? `${n.module} (${reason})`
+          : n.module;
+      }).join(", ")}${notDone.length>6?"…":""}</span>
+    </div>` : "";
+
+  el.innerHTML = `
+  <div class="phud-wrap" id="phud-wrap-${cid}">
+    <canvas class="phud-canvas" id="phud-canvas-${cid}"></canvas>
+    <div class="phud-inner">
+
+      <div class="phud-header">
+        <span class="phud-title">🛰 Pipeline HUD</span>
+        <span class="phud-badge ${isRunning?"running":isQueued?"idle":isDone?"done":"idle"}">${isRunning?"● RUNNING":isQueued?"▣ QUEUED":isDone?"✓ DONE":"IDLE"}</span>
+        ${modeIcon ? `<span class="phud-badge idle">${modeIcon} ${ps.mode||""}</span>` : ""}
+        ${cfBadge}${cleanupBadge}${mullvadBadge}
+        <div class="phud-meta">
+          <span>🖥 ${ps.host_count||0} hosts</span>
+          <span>📊 ${donePhases}/${totalPhases} fases</span>
+          ${ps.started_at ? `<span>🕐 ${ps.started_at}</span>` : ""}
+        </div>
+      </div>
+
+      <div class="phud-tl">
+        <div class="phud-tl-line"></div>
+        <div class="phud-tl-glow" style="right:${glowRight}%"></div>
+        ${nodesHtml}
+      </div>
+
+      <div class="phud-gantt">${ganttHtml || '<div style="font-size:.65rem;color:var(--text3);padding:8px 0 4px 108px">Waiting for modules…</div>'}</div>
+
+      ${notDoneHtml}
+      ${mullvadFailuresHtml}
+
+      <div class="phud-action" id="phud-action-${cid}">${lastLog ? "▶ "+lastLog : "…"}</div>
+    </div>
+  </div>`;
+
+  // Start/stop particle animation
+  if (isRunning) {
+    _phudStartParticles(cid);
+  } else {
+    _phudStopParticles(cid);
+  }
+}
+
+function renderCleanupResults(data) {
+  if (!data || !data.removed || data.removed.length === 0) return "";
+  const removed = data.removed.slice(0, 10);
+  const more = data.removed.length - 10;
+  return `
+    <div style="margin-top:12px;padding:10px 14px;background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.15);border-radius:7px">
+      <div style="font-size:.7rem;font-weight:600;color:var(--green);margin-bottom:6px">🧹 Subdomains removed (${data.removed.length})</div>
+      <div style="display:flex;flex-direction:column;gap:3px">
+        ${removed.map(r => `<div style="font-size:.67rem;color:var(--text2);display:flex;gap:8px;padding:1px 0">
+          <span style="color:var(--text3);min-width:90px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis">${r.host}</span>
+          <span style="color:var(--orange)">${r.reason}</span>
+        </div>`).join("")}
+        ${more > 0 ? `<div style="font-size:.65rem;color:var(--text3);padding-top:2px">… and ${more} more</div>` : ""}
+      </div>
+      <div style="font-size:.67rem;color:var(--text3);margin-top:6px">${data.remaining} valid subdomains remaining</div>
+    </div>`;
+}
+
+const RECON_MODULES = [
+  {id:"email",     label:"Email Security",          desc:"SPF, DMARC, DKIM, MX analysis",                     eta:"~10s",  icon:"✉"},
+  {id:"certs",     label:"Certificate Transparency",desc:"crt.sh CT logs + SSL/TLS probe",                   eta:"~20s",  icon:"🔒"},
+  {id:"dns",       label:"Full DNS Records",         desc:"A, AAAA, MX, TXT, NS, SOA, CNAME, SRV, CAA",       eta:"~10s",  icon:"🌐"},
+  {id:"headers",   label:"Security Headers",         desc:"HSTS, CSP, X-Frame-Options, cookies",              eta:"~30s",  icon:"📋"},
+  {id:"waf",       label:"WAF Detection",            desc:"Detect Imperva, Cloudflare, AWS WAF, Akamai…",     eta:"~1m",   icon:"🛡"},
+  {id:"takeover",  label:"Subdomain Takeover",       desc:"CNAME → dead 3rd-party services",                  eta:"~2m",   icon:"⚠"},
+  {id:"typosquat", label:"Typosquatting",            desc:"Look-alike domains targeting your brand",          eta:"~2m",   icon:"🎣"},
+  {id:"related",   label:"Related Domains",          desc:".net, .org, .com variations of your domains",      eta:"~30s",  icon:"🔗"},
+  {id:"cloud",     label:"Cloud Asset Discovery",    desc:"S3, Azure Blob, GCP buckets — public/private",     eta:"~3m",   icon:"☁"},
+  {id:"wayback",   label:"Wayback / GAU Mining",     desc:"Historical URLs with .env, .git, admin paths",     eta:"~2m",   icon:"⏪"},
+  {id:"breach",    label:"Breach Intelligence",      desc:"LeakIX, HaveIBeenPwned, TruffleHog secrets",       eta:"~30s",  icon:"💀"},
+  {id:"shodan",    label:"Shodan Intelligence",      desc:"Open ports, CVEs and banners per IP",              eta:"~1m",   icon:"📡"},
+  {id:"portscan",  label:"Port Scan",                desc:"naabu/nmap — risky exposed services",              eta:"~5m",   icon:"🔌"},
+  {id:"services",  label:"Exposed Paths",            desc:"/.git /.env /admin /swagger /actuator…",          eta:"~5m",   icon:"🗂"},
+  {id:"leaks",     label:"GitHub Secrets",           desc:"Leaked API keys and .git directory exposure",      eta:"~2m",   icon:"🔑"},
+  {id:"asn",       label:"ASN / IP Blocks",          desc:"All IP ranges and ASNs attributed to the org",     eta:"~30s",  icon:"🗺"},
+  {id:"cve",        label:"CVE Lookup (NVD)",          desc:"Cross-reference detected technologies with NVD CVE database",   eta:"~2m",   icon:"💥"},
+  {id:"vhost",      label:"Virtual Host Discovery",    desc:"Host header fuzzing — find hidden apps on same IPs",  eta:"~3m",   icon:"🏠"},
+  {id:"js",         label:"JavaScript Recon",          desc:"Katana crawl + extract endpoints, secrets, S3, IPs",  eta:"~5m",   icon:"📜"},
+  {id:"screenshot", label:"Screenshots",               desc:"Visual inventory of all live web assets (gowitness)",  eta:"~3m",   icon:"📸"},
+  {id:"dns_brute",  label:"DNS Brute-force",           desc:"dnsgen permutations + dnsx — find hidden subdomains",  eta:"~5m",   icon:"🔡"},
+  {id:"api_panels", label:"API & Panel Exposure",      desc:"Spring Boot, Swagger, GraphQL, CORS, Smuggling (nuclei)", eta:"~5m", icon:"🔌"},
+  {id:"certstream",   label:"CertStream Monitor",        desc:"Real-time certificate transparency — new asset alerts", eta:"~2m",  icon:"📡"},
+  {id:"wappalyzer",   label:"Wappalyzer Tech Detection", desc:"httpx -tech-detect — Bootstrap, jQuery, PHP, CMS, frameworks across all subdomains", eta:"~2m", icon:"🔬"},
+  {id:"dep_confusion",label:"Dependency Confusion",      desc:"npm/PyPI/RubyGems — nomes de pacotes internos que podem ser squatados", eta:"~3m",  icon:"📦"},
+  {id:"postman_collections", label:"Postman Collections", desc:"Exposed Postman collections on public API and GitHub — finds hardcoded tokens, API keys, base URLs", eta:"~1m", icon:"📮"},
+];
+
+// deduplicate by id
+const RECON_MODS_DEDUP = RECON_MODULES.filter((m,i,a)=>a.findIndex(x=>x.id===m.id)===i);
+
+const reconState = {};  // cid -> {module -> {status, data}}
+const pipelineState = {};  // cid -> pipeline status object
+let _pipelinePolls = {};   // cid -> interval id
+let _pipelineDonePhases = {};  // cid -> number of completed phases seen so far
+
+function _isPipelineActive(cid) {
+  const status = pipelineState[cid]?.status;
+  return status === "queued" || status === "running";
+}
+
+function _syncPipelineActionButton(cid) {
+  const btn = document.getElementById(`pipeline-btn-${cid}`);
+  if (!btn) return;
+  const active = _isPipelineActive(cid);
+  btn.disabled = false;
+  btn.className = `btn btn-icon ${active ? "pipeline-stop-btn" : "btn-secondary"}`;
+  btn.textContent = active ? "■ Stop Pipeline" : "▶ Run Pipeline";
+}
+
+async function handlePipelineAction(cid) {
+  if (_isPipelineActive(cid)) return stopPipeline(cid, {notify: false});
+  return runPipeline(cid);
+}
+
+async function stopPipeline(cid, {notify = true} = {}) {
+  if (!cid) return;
+  const btn = document.getElementById(`pipeline-btn-${cid}`);
+  if (btn) { btn.disabled = true; btn.textContent = "Stopping..."; }
+  try {
+    const r = await fetch('/api/recon/' + encodeURIComponent(cid) + '/pipeline', {method:'DELETE', headers:_authHeaders()});
+    if (!r.ok) throw await _apiErr(r);
+    pipelineState[cid] = {
+      ...(pipelineState[cid] || {}),
+      status: "stopped",
+      finished_at: new Date().toISOString(),
+    };
+    if (_pipelinePolls[cid]) {
+      clearInterval(_pipelinePolls[cid]);
+      delete _pipelinePolls[cid];
+    }
+    renderPipelineStatus(cid);
+    _syncPipelineActionButton(cid);
+    if (notify) alert('Pipeline stopped');
+  } catch(e) {
+    _syncPipelineActionButton(cid);
+    alert('Failed: ' + e.message);
+  }
+}
+
+async function runPipeline(cid) {
+  const btn = document.getElementById(`pipeline-btn-${cid}`);
+  if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }
+  let cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem("asm_settings")||"{}"); } catch(e) {}
+  cfg.mode = selectedRateMode;
+  try {
+    const r = await fetch(`/api/recon/${cid}/pipeline`, {
+      method: "POST",
+      headers: {"Content-Type":"application/json", ..._authHeaders()},
+      body: JSON.stringify(cfg),
+    });
+    let data = {};
+    if (!r.ok) { 
+      const t = await r.text(); 
+      if (r.status !== 409 || !t.includes("already running")) {
+        throw new Error(t); 
+      }
+    } else {
+      data = await r.json().catch(() => ({}));
+    }
+    pipelineState[cid] = {
+      ...(pipelineState[cid] || {}),
+      status: data.status || "queued",
+      job_id: data.job_id || "",
+      phase_label: "",
+      host_count: 0,
+      phases: [],
+      not_done: [],
+      started_at: new Date().toLocaleTimeString(),
+      log: data.job_id ? [{ts:new Date().toISOString(), msg:`Pipeline queued as job ${data.job_id}`}] : [],
+    };
+    renderPipelineStatus(cid);
+    _syncPipelineActionButton(cid);
+    _startPipelinePoll(cid);
+  } catch(e) {
+    _syncPipelineActionButton(cid);
+    alert("Erro ao iniciar pipeline: " + e.message);
+  }
+}
+
+function _startPipelinePoll(cid) {
+  if (_pipelinePolls[cid]) clearInterval(_pipelinePolls[cid]);
+  _pipelineDonePhases[cid] = _pipelineDonePhases[cid] || 0;
+  _pipelinePolls[cid] = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/recon/${cid}/pipeline`, {headers: _authHeaders()});
+      if (!r.ok) return;
+      const ps = await r.json();
+      pipelineState[cid] = ps;
+
+      // sync module states from pipeline
+      if (!reconState[cid]) reconState[cid] = {};
+      (ps.phases||[]).forEach(ph => ph.modules.forEach(m => {
+        if (m.status !== "not_run") reconState[cid][m.module] = {status: m.status};
+      }));
+
+      // Update the live phase HUD in place only. renderReconTab() is NOT called
+      // per-tick because it re-fetches the Playwright session artifact every poll;
+      // the recon tab (and its Playwright panel) is refreshed once on scan completion below.
+      renderPipelineStatus(cid);
+      _syncPipelineActionButton(cid);
+      renderAllCompanies();
+
+      // reload company data whenever a new phase completes (results are persisted per phase)
+      const doneNow = (ps.phases||[]).filter(p => p.done).length;
+      if (doneNow > (_pipelineDonePhases[cid] || 0)) {
+        _pipelineDonePhases[cid] = doneNow;
+        try {
+          await ensureCompanyLoaded(cid, {force: true});
+          const co = allCompanies().find(c => c.id === cid);
+          if (co) {
+            renderOverview(co);
+  try { setTimeout(initThreatMaps, 50); setTimeout(initThreatMaps, 400); } catch(e) {}
+            renderDomainsTab(co);
+            renderSubdomainsTab(co);
+            renderFindingsTab(co);
+          }
+        } catch(e) { /* ignore transient reload errors */ }
+      }
+
+      if (["done", "error", "stopped", "cancelled"].includes(ps.status)) {
+        clearInterval(_pipelinePolls[cid]);
+        _pipelineDonePhases[cid] = 0;
+        _syncPipelineActionButton(cid);
+        await reloadServerData();
+        const co = allCompanies().find(c => c.id === cid);
+        if (co) { renderOverview(co); renderDomainsTab(co); renderSubdomainsTab(co); renderFindingsTab(co); }
+        // Refresh the recon tab once now that the scan is done so the Playwright
+        // panel unlocks/updates — this is the only place it re-renders post-scan.
+        if (state.currentId === cid && (state.activeGroup === "pipeline" || state.tab === "pipeline")) {
+          renderReconTab(cid);
+        }
+      }
+    } catch(e) { /* ignore transient errors */ }
+  }, 2500);
+}
+
+
+function renderJsReverseTab(co) {
+  var el = document.getElementById("tab-jsreverse");
+  var jd = co.js_data || {};
+  var jsFiles = jd.js_files || [];
+
+  // Update badge
+  var totalSecrets = jd.total_secrets || 0;
+  var tc = document.getElementById("tc-jsreverse");
+  if (tc) tc.textContent = totalSecrets || "";
+
+  if (!jsFiles.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔬</div><div class="empty-state-title">No JS analysis data yet</div><div class="empty-state-copy">Run the pipeline with the js_scan module enabled.</div></div>';
+    return;
+  }
+
+  // FP filter — mirrors recon.py _is_fp_secret logic, applied retroactively to stored data
+  var _FP_PWD_RE = /(%filtered%|wrong.?password|forgot.?password|invalid.?password|missing.?password|need.?password|change.?password|reset.?password|show.?password|confirm.?password|enter.?password|password.?hint|password.?set|create.?password|redefine.?password|new.?password|old.?password|repeat.?password)/i;
+  var _FP_LABEL_RE = /^[A-Z][A-Z0-9_\-]{3,}$|^[a-z][a-z0-9_]{4,}[a-z0-9]$/;
+  function _jsFP(type, value) {
+    var v = value || "";
+    if (type === "password") {
+      // Strip key name to get inner value
+      var inner = v.replace(/^(?:password|passwd|pwd)\s*[=:]\s*['"]/i, "").replace(/['"]$/, "");
+      if (_FP_PWD_RE.test(inner)) return true;
+      if (/^[A-Z][A-Z0-9_\-.]+$/.test(inner) || /^[a-z][a-z\-.]+$/.test(inner)) return true;
+      if (/^['"']?passwords?['"']?$/i.test(inner)) return true;
+      // JS code fragments: WebRTC pwd: parsing, template strings, +var. concatenation
+      if (/[\[\]{}&|?]|\.substring\(|\+[a-z]+\./.test(inner)) return true;
+      // Sentence-like phrases: only letters and spaces
+      if (/^[A-Za-z][A-Za-z ]+$/.test(inner)) return true;
+      return false;
+    }
+    if (type === "access_token" || type === "secret_key") {
+      var inner2 = v.replace(/^[\w\-]+\s*[=:]\s*['"]/i, "").replace(/['"]$/, "");
+      return _FP_LABEL_RE.test(inner2);
+    }
+    if (type === "api_key") {
+      var inner3 = v.replace(/^[\w\-]+\s*[=:]\s*['"]/i, "").replace(/['"]$/, "");
+      return _FP_LABEL_RE.test(inner3);
+    }
+    if (type === "internal_ip") {
+      // Validate each octet ≤ 255
+      var m = v.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)/);
+      if (!m) return true;
+      return [m[1],m[2],m[3],m[4]].some(function(o){ return parseInt(o,10) > 255; });
+    }
+    return false;
+  }
+
+  // Collect all secrets and endpoints from all files
+  var allSecrets = [];
+  var allEndpoints = [];
+  var noiseHosts = new Set(["aadcdn.msauth.net","aadcdn.msftauth.net","ok1static.oktacdn.com","use.fontawesome.com"]);
+
+  jsFiles.forEach(function(f) {
+    var host = f.host || "";
+    var url = f.url || "";
+    (f.secrets || []).forEach(function(s) {
+      if (_jsFP(s.type, s.value)) return;
+      allSecrets.push({ severity: s.severity || "medium", type: s.type || "unknown", host: host, value: s.value || "", context: s.context || "", url: url });
+    });
+    (f.endpoints || []).forEach(function(ep) {
+      allEndpoints.push({ host: host, path: ep.path || ep.url || "", kind: ep.kind || "path", url: url });
+    });
+  });
+
+  var totalEndpoints = jd.total_endpoints || allEndpoints.length;
+
+  // Unique secret types for filter
+  var uniqueTypes = Array.from(new Set(allSecrets.map(function(s) { return s.type; }))).sort();
+
+  // Summary strip
+  var critCnt = jd.critical_count || allSecrets.filter(function(s){return s.severity==="critical";}).length;
+  var highCnt = jd.high_count    || allSecrets.filter(function(s){return s.severity==="high";}).length;
+  var medCnt  = jd.medium_count  || allSecrets.filter(function(s){return s.severity==="medium";}).length;
+
+  var html = '<div class="section-shell" style="padding:20px">';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">';
+  html += '<div><div style="font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">JS Reverse Engineering</div>';
+  html += '<div style="font-size:1.3rem;font-weight:700;color:var(--text)">Secrets &amp; API Endpoints</div></div></div>';
+
+  // Summary strip cards
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">';
+  function _statCard(label, val, color) {
+    return '<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 20px;min-width:110px">' +
+      '<div style="font-size:1.6rem;font-weight:800;color:' + color + '">' + val + '</div>' +
+      '<div style="font-size:.68rem;color:var(--text3);margin-top:2px;text-transform:uppercase">' + label + '</div></div>';
+  }
+  html += _statCard("Critical", critCnt, "var(--red)");
+  html += _statCard("High", highCnt, "var(--orange)");
+  html += _statCard("Medium", medCnt, "var(--yellow)");
+  html += _statCard("Total Secrets", totalSecrets, "var(--teal)");
+  html += _statCard("Endpoints", totalEndpoints, "var(--text2)");
+  html += '</div>';
+
+  // ── SECRETS SECTION ──────────────────────────────────────────────────────
+  html += '<div style="margin-bottom:32px">';
+  html += '<div style="font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">';
+  html += '<span>Secrets Found (' + allSecrets.length + ')</span>';
+  html += '<button onclick="_jsrExportSecretsCsv()" style="background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:5px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇ CSV</button>';
+  html += '</div>';
+
+  // Filter bar
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">';
+  html += '<select id="jsr-sev-filter" onchange="_jsrRender()" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:.72rem">';
+  html += '<option value="">All Severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>';
+
+  html += '<select id="jsr-type-filter" onchange="_jsrRender()" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:.72rem">';
+  html += '<option value="">All Types</option>';
+  uniqueTypes.forEach(function(t) { html += '<option value="' + esc(t) + '">' + esc(t) + '</option>'; });
+  html += '</select>';
+
+  html += '<input id="jsr-text-filter" oninput="_jsrRender()" placeholder="Search value / host..." style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 10px;font-size:.72rem;width:180px">';
+
+  html += '<label style="display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text2);cursor:pointer">';
+  html += '<input type="checkbox" id="jsr-noise-filter" onchange="_jsrRender()" checked> Hide noise CDNs</label>';
+  html += '</div>';
+
+  // Secrets table
+  html += '<div id="jsr-secrets-table"></div>';
+  html += '</div>';
+
+  // ── ENDPOINTS SECTION ────────────────────────────────────────────────────
+  html += '<div>';
+  html += '<div style="font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between">';
+  html += '<span>Discovered Endpoints</span>';
+  html += '<button onclick="_jsrExportEndpointsCsv()" style="background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:5px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇ CSV</button>';
+  html += '</div>';
+
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">';
+  html += '<input id="jsr-ep-text" oninput="_jsrRenderEp()" placeholder="Search path / host..." style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 10px;font-size:.72rem;width:200px">';
+  html += '<label style="display:flex;align-items:center;gap:5px;font-size:.72rem;color:var(--text2);cursor:pointer">';
+  html += '<input type="checkbox" id="jsr-api-only" onchange="_jsrRenderEp()"> API/Auth only</label>';
+  html += '</div>';
+
+  html += '<div id="jsr-endpoints-table"></div>';
+  html += '</div>';
+
+  // ── RUNTIME NETWORK MAP (Playwright) ────────────────────────────────────
+  var runtimeNet = jd.runtime_network || [];
+  var runtimeJsCnt = jd.runtime_js_count || 0;
+  html += '<div style="margin-top:32px">';
+  html += '<div style="font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:10px">';
+  html += '<span>Runtime Network Map <span style="font-size:.72rem;font-weight:400;color:var(--text3)">(Playwright)</span></span>';
+  if (runtimeJsCnt) html += '<span style="font-size:.68rem;color:var(--teal);font-weight:600">' + runtimeJsCnt + ' runtime JS chunks captured</span>';
+  html += '</div>';
+
+  if (!runtimeNet.length) {
+    html += '<div style="color:var(--text3);font-size:.78rem;padding:10px 0">No runtime network calls captured — run pipeline to collect Playwright data.</div>';
+  } else {
+    var methods = Array.from(new Set(runtimeNet.map(function(c){return c.method;}))).sort();
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">';
+    html += '<input id="jsr-net-filter" oninput="_jsrRenderNet()" placeholder="Filter URL..." style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 10px;font-size:.72rem;width:220px">';
+    html += '<select id="jsr-net-method" onchange="_jsrRenderNet()" style="background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:4px 8px;font-size:.72rem"><option value="">All Methods</option>';
+    methods.forEach(function(m){ html += '<option>' + esc(m) + '</option>'; });
+    html += '</select>';
+    html += '<button onclick="_jsrExportNetCsv()" style="background:var(--card);border:1px solid var(--border);color:var(--text2);border-radius:5px;padding:3px 10px;font-size:.68rem;cursor:pointer">⬇ CSV</button>';
+    html += '</div>';
+    html += '<div id="jsr-net-table"></div>';
+  }
+  html += '</div>';
+
+  html += '</div>'; // section-shell
+
+  el.innerHTML = html;
+
+  // Store data on window for filter handlers
+  window._jsrAllSecrets   = allSecrets;
+  window._jsrAllEndpoints = allEndpoints;
+  window._jsrRuntimeNet   = runtimeNet;
+  window._jsrNoiseHosts   = noiseHosts;
+  window._jsrRevealSet    = new Set();
+
+  _jsrRender();
+  _jsrRenderEp();
+  if (runtimeNet.length) _jsrRenderNet();
+}
+
+function _sevBadge(s) {
+  var c = {critical:'#fb7185',high:'#fb923c',medium:'#fbbf24',low:'#4ade80'}[s] || 'var(--text3)';
+  return '<span style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '44;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700;text-transform:uppercase">' + esc(s || 'info') + '</span>';
+}
+
+function _jsrRender() {
+  var sev    = (document.getElementById("jsr-sev-filter")  || {}).value || "";
+  var typ    = (document.getElementById("jsr-type-filter") || {}).value || "";
+  var txt    = ((document.getElementById("jsr-text-filter")|| {}).value || "").toLowerCase();
+  var noise  = (document.getElementById("jsr-noise-filter")|| {}).checked;
+  var tbl    = document.getElementById("jsr-secrets-table");
+  if (!tbl) return;
+
+  var rows = (window._jsrAllSecrets || []).filter(function(s) {
+    if (sev  && s.severity !== sev) return false;
+    if (typ  && s.type     !== typ) return false;
+    if (noise && (window._jsrNoiseHosts||new Set()).has(s.host)) return false;
+    if (txt  && !((s.value||"").toLowerCase().includes(txt) || (s.host||"").toLowerCase().includes(txt) || (s.type||"").toLowerCase().includes(txt))) return false;
+    return true;
+  });
+
+  if (!rows.length) {
+    tbl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:.8rem">No secrets match current filters.</div>';
+    return;
+  }
+
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:.72rem">';
+  h += '<thead><tr style="border-bottom:1px solid var(--border)">';
+  ['Severity','Type','Host','Value','Source URL'].forEach(function(col) {
+    h += '<th style="text-align:left;padding:6px 10px;color:var(--text3);font-weight:600;font-size:.68rem;text-transform:uppercase">' + col + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  rows.forEach(function(s, i) {
+    var revealed = (window._jsrRevealSet || new Set()).has(i);
+    var display  = revealed ? esc(s.value) : '••••••••';
+    var btnLabel = revealed ? 'hide' : 'reveal';
+    var shortUrl = s.url ? s.url.replace(/^https?:\/\//,'').substring(0,55) + (s.url.length > 55 ? '…' : '') : '';
+    h += '<tr style="border-bottom:1px solid var(--border)22;hover:background:var(--card2)">';
+    h += '<td style="padding:6px 10px">' + _sevBadge(s.severity) + '</td>';
+    h += '<td style="padding:6px 10px;color:var(--text2);font-family:monospace">' + esc(s.type) + '</td>';
+    h += '<td style="padding:6px 10px;color:var(--teal)">' + esc(s.host) + '</td>';
+    h += '<td style="padding:6px 10px;font-family:monospace;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(s.value) + '">';
+    h += '<span id="jsr-val-' + i + '">' + display + '</span> ';
+    h += '<button onclick="_jsrToggleReveal(' + i + ')" style="background:none;border:none;color:var(--teal);cursor:pointer;font-size:.65rem;padding:0 4px">' + btnLabel + '</button></td>';
+    h += '<td style="padding:6px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">';
+    if (s.url) h += '<a href="' + esc(s.url) + '" target="_blank" rel="noopener" style="color:var(--text3);text-decoration:none" title="' + esc(s.url) + '">' + esc(shortUrl) + '</a>';
+    h += '</td></tr>';
+  });
+  h += '</tbody></table>';
+  tbl.innerHTML = h;
+}
+
+function _jsrToggleReveal(i) {
+  if (!window._jsrRevealSet) window._jsrRevealSet = new Set();
+  if (window._jsrRevealSet.has(i)) window._jsrRevealSet.delete(i);
+  else window._jsrRevealSet.add(i);
+  _jsrRender();
+}
+
+function _jsrRenderEp() {
+  var txt     = ((document.getElementById("jsr-ep-text")  || {}).value || "").toLowerCase();
+  var apiOnly = (document.getElementById("jsr-api-only")  || {}).checked;
+  var tbl     = document.getElementById("jsr-endpoints-table");
+  if (!tbl) return;
+
+  var rows = (window._jsrAllEndpoints || []).filter(function(ep) {
+    if (apiOnly && !/(\/api\/|\/auth\/|\/oauth|\/login|\/graphql|\/v[0-9])/i.test(ep.path)) return false;
+    if (txt && !((ep.path||"").toLowerCase().includes(txt) || (ep.host||"").toLowerCase().includes(txt))) return false;
+    return true;
+  });
+
+  var maxRows = 500;
+  var shown   = rows.slice(0, maxRows);
+
+  if (!shown.length) {
+    tbl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text3);font-size:.8rem">No endpoints match current filters.</div>';
+    return;
+  }
+
+  var h = '<div style="font-size:.68rem;color:var(--text3);margin-bottom:6px">Showing ' + shown.length + (rows.length > maxRows ? ' of ' + rows.length : '') + ' endpoints</div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:.72rem">';
+  h += '<thead><tr style="border-bottom:1px solid var(--border)">';
+  ['Host','Path','Kind'].forEach(function(col) {
+    h += '<th style="text-align:left;padding:6px 10px;color:var(--text3);font-weight:600;font-size:.68rem;text-transform:uppercase">' + col + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  shown.forEach(function(ep) {
+    h += '<tr style="border-bottom:1px solid var(--border)22">';
+    h += '<td style="padding:6px 10px;color:var(--teal)">' + esc(ep.host) + '</td>';
+    h += '<td style="padding:6px 10px;font-family:monospace;color:var(--text)">' + esc(ep.path) + '</td>';
+    h += '<td style="padding:6px 10px;color:var(--text3)">' + esc(ep.kind) + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  tbl.innerHTML = h;
+}
+
+function _jsrExportSecretsCsv() {
+  var rows = window._jsrAllSecrets || [];
+  var lines = ["severity,type,host,value,url"];
+  rows.forEach(function(s) {
+    lines.push([s.severity, s.type, s.host, '"' + (s.value||"").replace(/"/g,'""') + '"', s.url].join(","));
+  });
+  _downloadCsv("js_secrets.csv", lines.join("\n"));
+}
+
+function _jsrExportEndpointsCsv() {
+  var rows = window._jsrAllEndpoints || [];
+  var lines = ["host,path,kind"];
+  rows.forEach(function(ep) {
+    lines.push([ep.host, '"' + (ep.path||"").replace(/"/g,'""') + '"', ep.kind].join(","));
+  });
+  _downloadCsv("js_endpoints.csv", lines.join("\n"));
+}
+
+function _jsrRenderNet() {
+  var txt    = ((document.getElementById("jsr-net-filter") || {}).value || "").toLowerCase();
+  var method = ((document.getElementById("jsr-net-method") || {}).value || "");
+  var tbl    = document.getElementById("jsr-net-table");
+  if (!tbl) return;
+
+  var rows = (window._jsrRuntimeNet || []).filter(function(c) {
+    if (method && c.method !== method) return false;
+    if (txt && !(c.url||"").toLowerCase().includes(txt)) return false;
+    return true;
+  });
+
+  var maxRows = 400;
+  var shown   = rows.slice(0, maxRows);
+
+  if (!shown.length) {
+    tbl.innerHTML = '<div style="padding:14px 0;color:var(--text3);font-size:.78rem">No calls match filter.</div>';
+    return;
+  }
+
+  var h = '<div style="font-size:.68rem;color:var(--text3);margin-bottom:6px">Showing ' + shown.length + (rows.length > maxRows ? ' of ' + rows.length : '') + ' calls</div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:.71rem">';
+  h += '<thead><tr style="border-bottom:1px solid var(--border)">';
+  ['Method','Type','URL'].forEach(function(col) {
+    h += '<th style="text-align:left;padding:5px 10px;color:var(--text3);font-weight:600;font-size:.67rem;text-transform:uppercase">' + col + '</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  var methodColor = {GET:'var(--teal)',POST:'var(--orange)',PUT:'var(--yellow)',DELETE:'var(--red)',PATCH:'#a78bfa'};
+  shown.forEach(function(c) {
+    var mc = methodColor[c.method] || 'var(--text2)';
+    var shortUrl = (c.url||'').replace(/^https?:\/\//,'');
+    h += '<tr style="border-bottom:1px solid var(--border)22">';
+    h += '<td style="padding:5px 10px;font-weight:700;color:' + mc + ';font-family:monospace;white-space:nowrap">' + esc(c.method) + '</td>';
+    h += '<td style="padding:5px 10px;color:var(--text3);white-space:nowrap">' + esc(c.type||'') + '</td>';
+    h += '<td style="padding:5px 10px;font-family:monospace;color:var(--text2);word-break:break-all">';
+    h += '<a href="' + esc(c.url||'') + '" target="_blank" rel="noopener" style="color:inherit;text-decoration:none" title="' + esc(c.url||'') + '">' + esc(shortUrl) + '</a>';
+    h += '</td></tr>';
+  });
+  h += '</tbody></table>';
+  tbl.innerHTML = h;
+}
+
+function _jsrExportNetCsv() {
+  var rows = window._jsrRuntimeNet || [];
+  var lines = ["method,type,url"];
+  rows.forEach(function(c) {
+    lines.push([c.method, c.type, '"' + (c.url||"").replace(/"/g,'""') + '"'].join(","));
+  });
+  _downloadCsv("js_runtime_network.csv", lines.join("\n"));
+}
+
+function _downloadCsv(filename, content) {
+  var blob = new Blob([content], {type: "text/csv"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+
+async function renderVulnsTab(co) {
+  const el = document.getElementById("tab-vulns");
+  if (!el) return;
+
+  el.innerHTML = `<div style="padding:40px;text-align:center;color:var(--text3)">
+    <div class="pulse" style="width:12px;height:12px;background:var(--teal);border-radius:50%;margin:0 auto 12px"></div>
+    Loading vulnerability data...</div>`;
+
+  let data;
+  try {
+    const resp = await fetch(`/api/vulns/${encodeURIComponent(co.id)}`, {headers:_authHeaders()});
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    data = await resp.json();
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠</div><div class="empty-state-title">Failed to load vuln data</div><div class="empty-state-copy">${esc(String(e))}</div></div>`;
+    return;
+  }
+
+  const cors     = data.cors || [];
+  const graphql  = data.graphql || [];
+  const nuclei   = data.nuclei || [];
+  const takeover = data.takeover || [];
+  const summary   = data.summary || {};
+  const findings  = _confirmedVulnFindings(co.findings || []);
+  const apiTotal  = Number(summary.total || (cors.length + graphql.length + nuclei.length + takeover.length));
+
+  const tcv = document.getElementById("tc-vulns");
+  if (tcv) tcv.textContent = String(apiTotal + findings.length);
+
+  const cats = [...new Set(findings.map(f => f.category).filter(Boolean))].sort();
+  const summaryCards = {
+    critical: findings.filter(f => f.severity === "critical").length,
+    high: findings.filter(f => f.severity === "high").length,
+    medium: findings.filter(f => f.severity === "medium").length,
+  };
+
+  const cidJs = _jsArg(co.id);
+  let html = `<div class="section-shell" style="padding:18px">
+    <div class="section-head">
+      <div class="section-head-main">
+        <div class="section-kicker">Confirmed Vulnerabilities</div>
+        <div class="section-title">Confirmed vulnerability findings only</div>
+        <div class="section-sub">Recon noise, brand intelligence, phishing and other non-vulnerability leads are filtered out.</div>
+      </div>
+    </div>`;
+
+  html += `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+    ${_vStatCard("Confirmed", findings.length, "var(--green)")}
+    ${_vStatCard("Critical", summaryCards.critical, "var(--red)")}
+    ${_vStatCard("High", summaryCards.high, "var(--orange)")}
+    ${_vStatCard("Medium", summaryCards.medium, "var(--yellow)")}
+    ${_vStatCard("CORS", cors.length, "var(--red)")}
+    ${_vStatCard("GraphQL", graphql.length, "var(--teal)")}
+    ${_vStatCard("Nuclei", nuclei.length, "var(--orange)")}
+    ${_vStatCard("Takeover", takeover.length, "var(--yellow)")}
+  </div>`;
+
+  if (findings.length) {
+    html += `<div class="findings-summary">
+      ${_severityCard("critical", summaryCards.critical)}
+      ${_severityCard("high", summaryCards.high)}
+      ${_severityCard("medium", summaryCards.medium)}
+    </div>`;
+    html += `<div class="filter-bar">
+      <input type="text" class="fi grow" id="f-search" placeholder="Search confirmed vulns, hosts, descriptions..." oninput='applyFindFilter(${cidJs})'>
+      <select class="fi" id="f-sev" onchange='applyFindFilter(${cidJs})'>
+        <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option>
+      </select>
+      <select class="fi" id="f-cat" onchange='applyFindFilter(${cidJs})'><option value="">All categories</option>${cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("")}</select>
+      <span style="font-size:.68rem;color:var(--text3);padding:6px 4px" id="f-cnt"></span>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px;margin-left:auto" onclick='exportFindings(${cidJs},"csv")' title="Export CSV">⬇ CSV</button>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick='exportFindings(${cidJs},"json")' title="Export JSON">⬇ JSON</button>
+    </div>
+    <div class="findings-list" id="f-list"></div>
+    <div class="empty-state" id="f-empty" style="display:none"><div class="empty-state-icon">∅</div><div class="empty-state-title">No confirmed vulns match the current filters</div><div class="empty-state-copy">Try widening the search terms or clearing severity/category filters.</div></div>`;
+  } else {
+    html += `<div class="empty-state"><div class="empty-state-icon">∅</div><div class="empty-state-title">No confirmed vulnerabilities yet</div><div class="empty-state-copy">Run the full scan to populate this view.</div></div>`;
+  }
+
+  html += `<div style="margin-top:18px">`;
+
+  const _sectionHdr = (title, count) => `<div style="font-size:.9rem;font-weight:700;color:var(--text);margin:24px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)">${esc(title)} <span style="color:var(--text3);font-weight:400">(${count})</span></div>`;
+  const _emptySection = msg => `<div style="padding:12px 16px;color:var(--text3);font-size:.8rem;background:var(--card);border:1px solid var(--border);border-radius:8px">${esc(msg)}</div>`;
+
+  html += _sectionHdr("CORS Misconfigurations", cors.length);
+  if (!cors.length) {
+    html += _emptySection("No CORS misconfigurations found.");
+  } else {
+    html += `<div style="display:grid;gap:10px">` + cors.map(f => {
+      const acac = f.acac === true || f.acac === "true" || f.acac === 1;
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          ${_sevBadge(f.severity || "high")}
+          <span style="font-weight:700;color:var(--teal)">${esc(f.host || "")}</span>
+          <span style="font-size:.72rem;color:var(--text3)">${esc(f.test || "")}</span>
+        </div>
+        <div style="font-size:.72rem;color:var(--text2);margin-bottom:6px">
+          <span style="color:var(--text3)">ACAO: </span><code style="color:var(--text)">${esc(f.acao || "")}</code>
+          ${acac ? `<span style="background:#fb718522;color:#fb7185;border:1px solid #fb718544;border-radius:4px;padding:1px 7px;font-size:.65rem;font-weight:700;margin-left:6px">⚠ Credentials</span>` : ""}
+        </div>
+        <div style="font-size:.7rem;color:var(--text3)">Origin sent: <code>${esc(f.origin_sent || "")}</code></div>
+        ${f.url ? `<div style="margin-top:6px"><a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:var(--teal);font-size:.7rem;text-decoration:none">${esc(f.url.substring(0,80))}</a></div>` : ""}
+      </div>`;
+    }).join("") + `</div>`;
+  }
+
+  html += _sectionHdr("GraphQL Endpoints", graphql.length);
+  html += graphql.length ? `<div style="display:grid;gap:10px">${graphql.map(f => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        ${_sevBadge(f.severity || "high")}
+        <span style="font-weight:700;color:var(--teal)">${esc(f.host || "")}</span>
+        <span style="font-size:.72rem;color:var(--text3)">${esc(f.url || "")}</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2)">${esc(f.desc || f.title || "")}</div>
+    </div>`).join("")}</div>` : _emptySection("No GraphQL endpoints detected.");
+
+  html += _sectionHdr("Nuclei Findings", nuclei.length);
+  html += nuclei.length ? `<div style="display:grid;gap:10px">${nuclei.map(f => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        ${_sevBadge(f.severity || "high")}
+        <span style="font-weight:700;color:var(--teal)">${esc(f.host || "")}</span>
+        <span style="font-size:.72rem;color:var(--text3)">${esc(f.template || f.name || "")}</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2)">${esc(f.desc || "")}</div>
+    </div>`).join("")}</div>` : _emptySection("No nuclei findings detected.");
+
+  html += _sectionHdr("Takeover Candidates", takeover.length);
+  html += takeover.length ? `<div style="display:grid;gap:10px">${takeover.map(f => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        ${_sevBadge(f.severity || "high")}
+        <span style="font-weight:700;color:var(--teal)">${esc(f.host || "")}</span>
+      </div>
+      <div style="font-size:.72rem;color:var(--text2)">${esc(f.desc || "")}</div>
+    </div>`).join("")}</div>` : _emptySection("No takeover candidates detected.");
+
+  html += `</div></div>`;
+  el.innerHTML = html;
+  if (findings.length) applyFindFilter(co.id);
+}
+
+function exportHosts(fmt) {
+  const hosts = _sub_hosts || _co_hosts || [];
+  const cid = state.currentId || "export";
+  const ts = new Date().toISOString().slice(0,10);
+  if(fmt === "json") {
+    _downloadBlob(JSON.stringify(hosts, null, 2), `${cid}_hosts_${ts}.json`, "application/json");
+  } else {
+    const header = "host,ip,waf,technologies,ports\n";
+    const rows = hosts.map(h => [
+      h.host||"", h.ip||"", h.waf||"",
+      (h.technologies||[]).join("|"),
+      (h.ports||[]).join("|")
+    ].map(v=>`"${v}"`).join(",")).join("\n");
+    _downloadBlob(header + rows, `${cid}_hosts_${ts}.csv`, "text/csv");
+  }
+}
+
+function copyInstall(name){
+  const el = document.getElementById("ic-" + name);
+  if(!el) return;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(el.textContent).then(()=>{
+      const btn = el.nextElementSibling;
+      if(btn){ btn.textContent = "✓"; setTimeout(()=>btn.textContent="⎘", 1500); }
+    });
+  } else {
+    _fallbackCopy(el.textContent);
+    const btn = el.nextElementSibling;
+    if(btn){ btn.textContent = "✓"; setTimeout(()=>btn.textContent="⎘", 1500); }
+  }
+}
+
+async function runTool(name){
+  const input = document.getElementById("ti-" + name);
+  const btn   = document.getElementById("tb-" + name);
+  const res   = document.getElementById("tr-" + name);
+  const target = (input?.value||"").trim();
+  if(!target){ input?.focus(); return; }
+
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  res.className = "tc-result show";
+  res.innerHTML = `<div style="color:var(--text3)">Running ${name} against ${target}…</div>`;
+
+  try {
+    const r = await fetch("/api/tools/run", {
+      method:"POST",
+      headers: _authHeaders(),
+      body: JSON.stringify({tool: name, target})
+    });
+    if(!r.ok) throw await _apiErr(r);
+
+    // Poll for result
+    const pollIv = setInterval(async ()=>{
+      const pr = await fetch(`/api/tools/result?tool=${encodeURIComponent(name)}&target=${encodeURIComponent(target)}`);
+      const pd = await pr.json();
+      if(pd.status === "done" || pd.status === "error"){
+        clearInterval(pollIv);
+        btn.disabled = false;
+        btn.textContent = "Run";
+        if(pd.error){
+          res.innerHTML = `<div style="color:var(--red)">Error: ${pd.error}</div>`;
+        } else {
+          const findings = pd.findings || [];
+          if(!findings.length){
+            res.innerHTML = `<div style="color:var(--text3)">No findings (${pd.duration?.toFixed(1)||"?"}s)</div>`;
+          } else {
+            const SEV_COLOR = {critical:"#fb7185",high:"#fb923c",medium:"#fbbf24",low:"#4ade80",info:"#60a5fa"};
+            res.innerHTML = `<div style="color:var(--text3);margin-bottom:4px">${findings.length} findings · ${pd.duration?.toFixed(1)||"?"}s</div>` +
+              findings.slice(0,50).map(f=>{
+                const c = SEV_COLOR[f.severity]||"var(--text2)";
+                return `<div class="f-line"><span style="color:${c};font-weight:600">[${f.type}]</span> ${f.value}${f.port?" :"+f.port:""}</div>`;
+              }).join("") +
+              (findings.length > 50 ? `<div style="color:var(--text3)">… and ${findings.length-50} more</div>` : "");
+          }
+        }
+      }
+    }, 1500);
+
+  } catch(e){
+    btn.disabled = false;
+    btn.textContent = "Run";
+    res.innerHTML = `<div style="color:var(--red)">Error: ${e.message}</div>`;
+  }
+}
+
+function viewReconResult(cid, moduleId){
+  const s = reconState[cid]?.[moduleId];
+  if(!s||!s.data) return;
+  const data = s.data.data||s.data;
+  const pre = document.createElement("pre");
+  pre.style.cssText="position:fixed;top:5vh;left:5vw;width:90vw;height:90vh;background:#0b0e18;color:#e2e8f0;border:1px solid #1e2d45;border-radius:10px;padding:20px;overflow:auto;z-index:9999;font-size:12px;line-height:1.5";
+  pre.textContent = JSON.stringify(data, null, 2);
+  const close = document.createElement("button");
+  close.textContent="✕ Close";
+  close.style.cssText="position:fixed;top:calc(5vh + 10px);right:calc(5vw + 16px);z-index:10000;background:#f43f5e;color:#fff;border:none;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:13px";
+  close.onclick=()=>{document.body.removeChild(pre);document.body.removeChild(close);};
+  document.body.appendChild(pre);
+  document.body.appendChild(close);
+}
+
+// ── Tool Logs tab ─────────────────────────────────���──────────────────────────
+let _tlData = [];
+let _tlFilter = "";
+let _tlStatusFilter = "";
+let _tlToolFilter = "";
+let _tlPage = 1;
+const _tlOpenGroups = new Set();
+const _tlVirtualRuns = new Map();
+const TLP = 40;
+
+async function loadToolLogs() {
+  const cid = state.currentId;
+  if (!cid) return;
+  const el = document.getElementById("tab-toollogs");
+  el.innerHTML = `<div style="color:var(--text3);font-size:0.8rem;padding:20px 0">Loading logs…</div>`;
+  try {
+    const r = await fetch(`/api/recon/${cid}/tool-logs`, {headers: _authHeaders()});
+    if (!r.ok) throw await _apiErr(r);
+    _tlData = await r.json();
+    document.getElementById("tc-toollogs").textContent = _tlData.length || "";
+    renderToolLogs(el);
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--red);font-size:0.8rem;padding:20px 0">Error: ${e.message}</div>`;
+  }
+}
+
+function renderToolLogs(el) {
+  if (!el) return;
+  _tlVirtualRuns.clear();
+  const q = (_tlFilter || "").toLowerCase();
+  const tools = [...new Set(_tlData.map(r => _tlExactName(r)).filter(Boolean))].sort();
+  const filtered = _tlData.filter(r => {
+    const hay = [r.module, r.tool, r.binary, r.display_name, r.cmd, r.status, r.exit_code, r.ts].join(" ").toLowerCase();
+    const st = _tlNormalizedStatus(r);
+    return (!q || hay.includes(q)) &&
+      (!_tlStatusFilter || st === _tlStatusFilter) &&
+      (!_tlToolFilter || _tlExactName(r) === _tlToolFilter);
+  });
+
+  const doneCount = _tlData.filter(r => _tlNormalizedStatus(r) === "done").length;
+  const runningCount = _tlData.filter(r => _tlNormalizedStatus(r) === "running").length;
+  const skippedCount = _tlData.filter(r => _tlNormalizedStatus(r) === "skipped").length;
+  const errCount = _tlData.filter(r => _tlNormalizedStatus(r) === "error").length;
+  const timeoutCount = _tlData.filter(r => _tlNormalizedStatus(r) === "timeout").length;
+  const totalDur = _tlData.reduce((s, r) => s + (Number(r.duration) || 0), 0);
+
+  const groupsMap = new Map();
+  filtered.forEach(r => {
+    const key = _tlGroupKey(r);
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, {
+        key,
+        module: r.module || "unknown",
+        tool: _tlExactName(r),
+        binary: r.binary || r.script || "",
+        runs: [],
+      });
+    }
+    groupsMap.get(key).runs.push(r);
+  });
+  const groups = [...groupsMap.values()].map(g => {
+    g.runs.sort((a, b) => String(b.ts || "").localeCompare(String(a.ts || "")));
+    g.done = g.runs.filter(r => _tlNormalizedStatus(r) === "done").length;
+    g.error = g.runs.filter(r => _tlNormalizedStatus(r) === "error").length;
+    g.timeout = g.runs.filter(r => _tlNormalizedStatus(r) === "timeout").length;
+    g.skipped = g.runs.filter(r => _tlNormalizedStatus(r) === "skipped").length;
+    g.running = g.runs.filter(r => _tlNormalizedStatus(r) === "running").length;
+    g.duration = g.runs.reduce((s, r) => s + (Number(r.duration) || 0), 0);
+    g.latest = g.runs[0] || {};
+    return g;
+  }).sort((a, b) => {
+    const scoreA = (a.error * 1000) + (a.timeout * 500) + (a.running * 250) + (a.skipped * 50);
+    const scoreB = (b.error * 1000) + (b.timeout * 500) + (b.running * 250) + (b.skipped * 50);
+    return (scoreB - scoreA) || String(b.latest.ts || "").localeCompare(String(a.latest.ts || ""));
+  });
+
+  const totPg = Math.max(1, Math.ceil(groups.length / TLP));
+  _tlPage = Math.max(1, Math.min(_tlPage, totPg));
+  const start = (_tlPage - 1) * TLP;
+  const pageGroups = groups.slice(start, start + TLP);
+  const groupCards = pageGroups.map(_tlGroupCard).join("");
+
+  const errBadge = errCount > 0
+    ? `<span class="tl-err-badge" title="${errCount} tool error(s)">${errCount} error${errCount>1?'s':''}</span>` : "";
+  const warnBadge = timeoutCount > 0
+    ? `<span class="tl-warn-badge">${timeoutCount} timeout${timeoutCount>1?'s':''}</span>` : "";
+  const pNums = _tlPager(totPg);
+
+  el.innerHTML = `
+    <div class="section-shell">
+    <div class="section-head">
+      <div class="section-head-main">
+        <div class="section-kicker">Execution Logs ${errBadge}${warnBadge}</div>
+        <div class="section-title">Ferramentas executadas neste projeto</div>
+        <div class="section-sub">Agrupado pelo nome exato do executável/script que rodou. Clique em <code>dig</code>, <code>subfinder</code>, <code>httpx</code> etc. para ver comandos; clique em uma execução para abrir stdout/stderr completo.</div>
+      </div>
+      <div class="section-actions"><span class="sec-cnt">${groups.length} grupos · ${filtered.length} runs</span></div>
+    </div>
+    <div class="jobs-summary tl-summary">
+      ${_tlKpi("Total", _tlData.length, "Runs registrados")}
+      ${_tlKpi("Passou", doneCount, "Status done", "ok")}
+      ${_tlKpi("Erro", errCount, "Exit/code failure", errCount ? "error" : "")}
+      ${_tlKpi("Pulado", skippedCount, "Com justificativa")}
+      ${_tlKpi("Rodando", runningCount, "Ainda sem finish", runningCount ? "running" : "")}
+      ${_tlKpi("Tempo", _fmtDuration(totalDur), "Soma das execuções")}
+    </div>
+    <div class="tl-bar">
+      <input class="tl-input grow" placeholder="Buscar por módulo, ferramenta, comando, status..." oninput="_tlFilter=this.value;_tlPage=1;renderToolLogs(document.getElementById('tab-toollogs'))" value="${esc(_tlFilter)}">
+      <select class="fi" onchange="_tlStatusFilter=this.value;_tlPage=1;renderToolLogs(document.getElementById('tab-toollogs'))">
+        <option value="" ${!_tlStatusFilter ? "selected" : ""}>Todos status</option>
+        <option value="done" ${_tlStatusFilter==="done" ? "selected" : ""}>Passou</option>
+        <option value="error" ${_tlStatusFilter==="error" ? "selected" : ""}>Erro</option>
+        <option value="timeout" ${_tlStatusFilter==="timeout" ? "selected" : ""}>Timeout</option>
+        <option value="skipped" ${_tlStatusFilter==="skipped" ? "selected" : ""}>Pulado</option>
+        <option value="running" ${_tlStatusFilter==="running" ? "selected" : ""}>Rodando</option>
+      </select>
+      <select class="fi" onchange="_tlToolFilter=this.value;_tlPage=1;renderToolLogs(document.getElementById('tab-toollogs'))">
+        <option value="" ${!_tlToolFilter ? "selected" : ""}>Todas ferramentas/scripts</option>
+        ${tools.map(t => `<option value="${escAttr(t)}" ${_tlToolFilter===t ? "selected" : ""}>${esc(t)}</option>`).join("")}
+      </select>
+      <button class="tl-refresh" onclick="loadToolLogs()">Refresh</button>
+      <button class="tl-clear" onclick="clearToolLogs()">Clear</button>
+      ${errCount > 0 ? `<button class="tl-filter-err" onclick="_tlStatusFilter='error';_tlPage=1;renderToolLogs(document.getElementById('tab-toollogs'))">Errors only</button>` : ""}
+      <span class="tl-count">${groups.length} grupos / ${filtered.length} execuções</span>
+    </div>
+    <div class="tl-groups">
+      ${groupCards || '<div class="empty"><b>Nenhuma ferramenta registrada</b>Nenhum comando foi capturado ainda para este projeto.</div>'}
+      <div class="pager">
+        <span class="pager-info">${groups.length ? `${start+1}-${Math.min(start+TLP, groups.length)} of ${groups.length} grupos` : "0 of 0"}</span>
+        <div class="pager-btns">
+          <button class="pb" onclick="tlPageNav(-1)" ${_tlPage<=1 ? "disabled" : ""}>Prev</button>
+          <span>${pNums}</span>
+          <button class="pb" onclick="tlPageNav(1)" ${_tlPage>=totPg ? "disabled" : ""}>Next</button>
+        </div>
+      </div>
+    </div>
+    </div>`;
+}
+
+function _tlGroupKey(r) {
+  return _tlExactName(r);
+}
+
+function _tlExactName(r) {
+  return r.display_name || _baseName(r.binary || r.script || "") || r.tool || "?";
+}
+
+function _baseName(path) {
+  const value = String(path || "").replace(/\\/g, "/");
+  return value.split("/").filter(Boolean).pop() || "";
+}
+
+function _tlGroupDomId(key) {
+  return "tlgrp-" + btoa(unescape(encodeURIComponent(key))).replace(/[^a-zA-Z0-9]/g, "");
+}
+
+function _tlGroupCard(group) {
+  const key = group.key;
+  const open = _tlOpenGroups.has(key);
+  const latestStatus = _tlNormalizedStatus(group.latest || {});
+  const healthClass = group.error ? "error" : group.timeout ? "warn" : group.running ? "running" : group.skipped ? "skipped" : "ok";
+  const statusBadge = group.error
+    ? `<span class="tl-badge-err">${group.error} erro${group.error>1?"s":""}</span>`
+    : group.timeout
+    ? `<span class="tl-badge-warn">${group.timeout} timeout${group.timeout>1?"s":""}</span>`
+    : group.running
+    ? `<span class="tl-badge-run">${group.running} rodando</span>`
+    : group.skipped
+    ? `<span class="tl-badge-dim">${group.skipped} pulado${group.skipped>1?"s":""}</span>`
+    : `<span class="tl-badge-ok">passou</span>`;
+  const latest = group.latest || {};
+  const runsHtml = open ? _tlGroupRuns(group.runs) : "";
+  return `
+    <div class="tl-group-card ${healthClass}">
+      <button type="button" class="tl-group-head" onclick="_tlToggleGroup('${escAttr(key)}')">
+        <div class="tl-group-main">
+          <div class="tl-group-title">
+            <span class="tl-group-tool">${esc(group.tool)}</span>
+          </div>
+          <div class="tl-group-sub">
+            <span class="tl-group-module">${esc(group.module)}</span>
+            ${group.binary ? `<span class="tl-group-path">${esc(group.binary)}</span>` : ""}
+            <span>${esc(latest.cmd || "sem comando")}</span>
+          </div>
+        </div>
+        <div class="tl-group-metrics">
+          ${statusBadge}
+          <span class="tl-pill">${group.runs.length} execuções</span>
+          <span class="tl-pill">${_fmtDuration(group.duration)}</span>
+          <span class="tl-pill">${esc(_fmtToolTs(latest.ts))}</span>
+          <span class="tl-caret">${open ? "−" : "+"}</span>
+        </div>
+      </button>
+      <div class="tl-group-body" id="${_tlGroupDomId(key)}" style="display:${open ? "block" : "none"}">
+        ${runsHtml}
+      </div>
+    </div>`;
+}
+
+function _tlGroupRuns(runs) {
+  const rows = runs.map(r => {
+    const st = _tlNormalizedStatus(r);
+    const runId = r.run_id != null ? String(r.run_id) : "";
+    let clickable = "";
+    if (runId) {
+      clickable = ` onclick="event.stopPropagation();openToolLogModal('${esc(runId)}')"`;
+    } else {
+      const virtualId = "v" + (_tlVirtualRuns.size + 1);
+      _tlVirtualRuns.set(virtualId, r);
+      clickable = ` onclick="event.stopPropagation();openToolLogVirtual('${virtualId}')"`;
+    }
+    const outBits = [
+      r.stdout_tail ? `<span class="tl-io tl-stdout-dot">stdout</span>` : "",
+      r.stderr_tail ? `<span class="tl-io tl-stderr-dot">stderr</span>` : "",
+    ].filter(Boolean).join(" ");
+    return `<tr class="tl-clickable"${clickable}>
+      <td class="tl-ts">${esc(_fmtToolTs(r.ts))}</td>
+      <td class="tl-tool">${esc(_tlExactName(r))}</td>
+      <td><span class="${_tlStatusClass(st)}">${esc(st)}</span></td>
+      <td class="tl-exit">${r.exit_code != null ? esc(r.exit_code) : "—"}</td>
+      <td class="tl-dur">${_fmtDuration(r.duration)}</td>
+      <td class="tl-cmd"><div class="tl-cmd-main">${esc(r.cmd || "—")}</div>${outBits ? `<div class="tl-io-row">${outBits}</div>` : ""}</td>
+    </tr>`;
+  }).join("");
+  return `
+    <div class="tl-wrap">
+      <table class="tl-table tl-runs-table">
+        <thead><tr><th>Quando</th><th>Ferramenta/script</th><th>Status</th><th>Exit</th><th>Duração</th><th>Comando / output</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function _tlToggleGroup(key) {
+  if (_tlOpenGroups.has(key)) _tlOpenGroups.delete(key);
+  else _tlOpenGroups.add(key);
+  renderToolLogs(document.getElementById("tab-toollogs"));
+}
+
+function _tlNormalizedStatus(r) {
+  if (r.status === "timeout") return "timeout";
+  if (r.status === "running") return "running";
+  if (r.status === "skipped" || r.status === "not_run") return "skipped";
+  if (r.status === "error" || (r.exit_code != null && Number(r.exit_code) !== 0)) return "error";
+  if (r.status === "done" || Number(r.exit_code) === 0) return "done";
+  return r.status || "unknown";
+}
+
+function _tlStatusClass(st) {
+  if (st === "error") return "tl-badge-err";
+  if (st === "timeout") return "tl-badge-warn";
+  if (st === "done") return "tl-badge-ok";
+  if (st === "running") return "tl-badge-run";
+  if (st === "skipped") return "tl-badge-dim";
+  return "tl-badge-dim";
+}
+
+function _fmtDuration(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  if (n >= 3600) return (n / 3600).toFixed(1) + "h";
+  if (n >= 60) return (n / 60).toFixed(1) + "m";
+  return n.toFixed(1) + "s";
+}
+
+function _fmtToolTs(value) {
+  if (!value) return "—";
+  return String(value).replace("T", " ").slice(0, 19);
+}
+
+function _tlKpi(label, value, sub, mood) {
+  const cls = mood ? ` ${mood}` : "";
+  return `<div class="job-kpi tl-kpi${cls}">
+    <div class="job-kpi-label">${esc(label)}</div>
+    <div class="job-kpi-value">${esc(value)}</div>
+    <div class="job-kpi-sub">${esc(sub || "")}</div>
+  </div>`;
+}
+
+function _tlPager(totPg) {
+  let out = "";
+  for (let i = Math.max(1, _tlPage - 2); i <= Math.min(totPg, _tlPage + 2); i++) {
+    out += `<button class="pb${i === _tlPage ? " active" : ""}" onclick="tlGoPage(${i})">${i}</button>`;
+  }
+  return out;
+}
+
+function tlPageNav(delta) {
+  _tlPage += delta;
+  renderToolLogs(document.getElementById("tab-toollogs"));
+}
+
+function tlGoPage(page) {
+  _tlPage = page;
+  renderToolLogs(document.getElementById("tab-toollogs"));
+}
+
+async function clearToolLogs() {
+  const cid = state.currentId;
+  if (!cid) return;
+  await fetch(`/api/recon/${cid}/tool-logs`, {method:"DELETE", headers: _authHeaders()});
+  _tlData = [];
+  _tlFilter = "";
+   document.getElementById("tc-toollogs").textContent = "";
+   renderToolLogs(document.getElementById("tab-toollogs"));
+ }
+
+// ── Tool Execution Detail Modal ───────────────────────────────────────────
+function _renderToolLogDetail(d) {
+  const titleEl = document.getElementById("tool-err-title");
+  const bodyEl  = document.getElementById("tool-err-body");
+  const status = _tlNormalizedStatus(d);
+  const statusBadge = `<span class="${_tlStatusClass(status)}">${esc(status)}</span>`;
+  const exitBadge = d.exit_code !== null && d.exit_code !== undefined
+    ? (d.exit_code === 0 ? `<span class="tl-badge-ok">exit ${d.exit_code}</span>` : `<span class="tl-badge-err">exit ${d.exit_code}</span>`)
+    : `<span class="tl-badge-dim">exit —</span>`;
+  const durStr = _fmtDuration(d.duration);
+  const stderrBlock = d.stderr_tail
+    ? `<div style="margin-top:10px"><div class="tl-modal-label err">STDERR / erro</div><pre class="tool-err-pre">${esc(d.stderr_tail)}</pre></div>`
+    : `<div style="margin-top:8px;color:var(--text3);font-size:.68rem">No stderr/error output captured.</div>`;
+  const stdoutText = d.stdout_tail
+    || (d.kind === "module"
+      ? "Módulo interno não retornou payload detalhado."
+      : "Comando executou e não escreveu nada em stdout. Isso é normal para consultas sem resultado, por exemplo dig CAA/SRV/CNAME sem registro.");
+  const stdoutBlock = `<div style="margin-top:10px"><div class="tl-modal-label ok">STDOUT / output</div><pre class="tool-err-pre">${esc(stdoutText)}</pre></div>`;
+  const exactName = _tlExactName(d);
+  const exactPath = d.binary || d.script || (Array.isArray(d.argv) ? d.argv[0] : "");
+  const commandLabel = d.kind === "module" ? "Module execution" : "Command";
+
+  titleEl.textContent = exactName;
+  bodyEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div><span style="color:var(--text3);font-size:.68rem">Ferramenta / script / módulo</span><div style="margin-top:2px;color:var(--yellow);font-family:var(--mono);font-weight:700">${esc(exactName)}</div></div>
+      <div><span style="color:var(--text3);font-size:.68rem">Módulo</span><div style="margin-top:2px;color:var(--teal);font-family:var(--mono)">${esc(d.module || "?")}</div></div>
+      <div style="grid-column:1/-1"><span style="color:var(--text3);font-size:.68rem">Caminho exato</span><div style="margin-top:2px;color:var(--text);font-family:var(--mono);font-size:.68rem;word-break:break-all">${esc(exactPath || (d.kind === "module" ? "internal pipeline module" : "?"))}</div></div>
+      <div><span style="color:var(--text3);font-size:.68rem">Status</span><div style="margin-top:2px">${statusBadge}</div></div>
+      <div><span style="color:var(--text3);font-size:.68rem">Exit Code</span><div style="margin-top:2px">${exitBadge}</div></div>
+      <div><span style="color:var(--text3);font-size:.68rem">Duration</span><div style="margin-top:2px;color:var(--text);font-family:var(--mono)">${durStr}</div></div>
+      <div><span style="color:var(--text3);font-size:.68rem">Started</span><div style="margin-top:2px;color:var(--text);font-family:var(--mono);font-size:.68rem">${esc(d.ts || "?")}</div></div>
+      <div style="grid-column:1/-1"><span style="color:var(--text3);font-size:.68rem">Finished</span><div style="margin-top:2px;color:var(--text);font-family:var(--mono);font-size:.68rem">${esc(d.finished_at || "?")}</div></div>
+    </div>
+    <div style="margin-bottom:8px">
+      <div style="color:var(--text3);font-size:.68rem;margin-bottom:3px">${commandLabel}</div>
+      <pre class="tool-err-pre" style="background:rgba(0,0,0,0.3);border-color:rgba(255,255,255,0.1)">${esc(d.cmd || "?")}</pre>
+    </div>
+    ${stderrBlock}
+    ${stdoutBlock}
+  `;
+}
+
+async function openToolLogModal(runId) {
+  const cid = state.currentId;
+  if (!cid || !runId) return;
+  const overlay = document.getElementById("modal-tool-err");
+  const titleEl = document.getElementById("tool-err-title");
+  const bodyEl  = document.getElementById("tool-err-body");
+  if (!overlay) return;
+
+  titleEl.textContent = "Loading execution log...";
+  bodyEl.innerHTML = `<div style="color:var(--text3);padding:20px">Fetching tool run #${runId}...</div>`;
+  overlay.classList.add("show");
+
+  try {
+    const r = await fetch(`/api/recon/${cid}/tool-logs/${runId}`, {headers: _authHeaders()});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    _renderToolLogDetail(d);
+  } catch(e) {
+    titleEl.textContent = "Error loading execution log";
+    bodyEl.innerHTML = `<div style="color:var(--red);padding:12px">Failed to load tool run details: ${esc(e.message)}</div>`;
+  }
+}
+
+function openToolLogVirtual(virtualId) {
+  const d = _tlVirtualRuns.get(virtualId);
+  if (!d) return;
+  const overlay = document.getElementById("modal-tool-err");
+  if (!overlay) return;
+  overlay.classList.add("show");
+  _renderToolLogDetail(d);
+}
+
+async function openToolErrModal(runId) {
+  return openToolLogModal(runId);
+}
+
+function closeToolErrModal() {
+  document.getElementById("modal-tool-err").classList.remove("show");
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+//  LIVE TERMINAL TAB — real-time verbose tool output
+// ════════════════════════════════════════════════════════════════════════
+// Shows actual stdout/stderr from tools as they execute, grouped by module.
+// Polls globally while a pipeline is running, renders only when tab is open.
+let _ltPoll = null;
+let _ltPaused = false;
+let _ltActiveCid = null;
+let _ltSince = 0;          // Unix timestamp for incremental live output fetching
+let _ltCmdLog = [];        // command invocations from tool-logs
+let _ltCmdLastTs = "";     // last seen command timestamp
+
+// Grouped output: { module: [{ts, stream, line}, ...] }
+let _ltModules = {};       // module -> array of output lines + commands
+
+function _ltEnsurePolling() {
+  const activeCid = Object.keys(pipelineState).find(cid => {
+    const ps = pipelineState[cid];
+    return ps && (ps.status === "running" || ps.status === "queued");
+  });
+  if (!activeCid) {
+    if (_ltPoll) { clearInterval(_ltPoll); _ltPoll = null; _ltActiveCid = null; }
+    return;
+  }
+  if (_ltActiveCid !== activeCid) {
+    _ltActiveCid = activeCid;
+    _ltSince = Date.now() / 1000;
+    _ltCmdLog = [];
+    _ltCmdLastTs = "";
+    _ltModules = {};
+  }
+  if (_ltPoll) return;
+  _ltPoll = setInterval(() => _fetchLT(), 1500);
+  _fetchLT();
+}
+
+async function _fetchLT() {
+  if (_ltPaused || !_ltActiveCid) return;
+  let hasNew = false;
+  // 1) Fetch new command invocations from tool-logs
+  try {
+    const r = await fetch("/api/recon/" + _ltActiveCid + "/tool-logs", {headers: _authHeaders()});
+    if (r.ok) {
+      const all = await r.json();
+      for (let i = all.length - 1; i >= 0; i--) {
+        if (all[i].ts <= _ltCmdLastTs) break;
+        const l = all[i];
+        _ltCmdLog.unshift(l);
+        // Record command start in module output
+        const mod = l.module || "?";
+        if (!_ltModules[mod]) _ltModules[mod] = [];
+        if (!_ltModules[mod].some(e => e._cmd === l.cmd)) {
+          _ltModules[mod].push({ts: l.ts, stream: "cmd", line: "$ "+l.cmd, _cmd: l.cmd,
+            status: l.status, exit_code: l.exit_code, duration: l.duration, run_id: l.run_id, tool: l.tool});
+        }
+        hasNew = true;
+      }
+      if (all.length > 0) _ltCmdLastTs = all[all.length-1].ts;
+    }
+  } catch(e) {}
+
+  // 2) Fetch real-time stdout/stderr output
+  try {
+    const r = await fetch("/api/live-output/" + _ltActiveCid + "?since=" + _ltSince, {headers: _authHeaders()});
+    if (r.ok) {
+      const {lines, ts} = await r.json();
+      if (ts) _ltSince = ts;
+      for (const l of lines) {
+        const mod = l.module || "?";
+        if (!_ltModules[mod]) _ltModules[mod] = [];
+        _ltModules[mod].push({ts: l.ts, stream: l.stream, line: l.line});
+        hasNew = true;
+      }
+    }
+  } catch(e) {}
+
+  if (hasNew) {
+    _renderLTTerminal();
+    const badge = document.getElementById("lt-live-badge");
+    if (badge) { badge.style.display = "inline-block"; setTimeout(() => badge.style.display = "none", 1500); }
+  }
+  const cnt = document.getElementById("lt-cnt");
+  if (cnt) {
+    const total = Object.values(_ltModules).reduce((s,arr) => s+arr.length, 0);
+    cnt.textContent = total + " lines" + (_ltPaused ? " (paused)" : "");
+  }
+}
+
+function _lineCount() {
+  return Object.values(_ltModules).reduce((s,arr) => s+arr.length, 0);
+}
+
+function _renderLTTerminal() {
+  const body = document.getElementById("lt-body");
+  if (!body) return;
+  const wasAtBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 50;
+
+  // Sort modules by first timestamp
+  const sortedMods = Object.entries(_ltModules).sort((a,b) => {
+    const ta = a[1].length ? a[1][0].ts : "z";
+    const tb = b[1].length ? b[1][0].ts : "z";
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+
+  let html = "";
+  for (const [mod, entries] of sortedMods) {
+    // Module header
+    const lastEntry = entries[entries.length-1];
+    const isRunning = lastEntry && lastEntry.stream === "stdout" && lastEntry.status !== "done" && lastEntry.status !== "error";
+    const headerCls = isRunning ? "lt-mod-running" : "lt-mod-done";
+
+    // Collapse/expand toggle
+    const modId = "ltmod-" + mod.replace(/[^a-z0-9]/gi, "_");
+    html += `<div class="lt-module ${headerCls}" id="${modId}-wrap">
+      <div class="lt-mod-hdr" onclick="document.getElementById('${modId}-body').classList.toggle('lt-collapsed'); this.querySelector('.lt-mod-arr').textContent = document.getElementById('${modId}-body').classList.contains('lt-collapsed') ? '▶' : '▼'">
+        <span class="lt-mod-arr">▼</span>
+        <span class="lt-mod-name">[${esc(mod)}]</span>
+        <span class="lt-mod-tool">${lastEntry && lastEntry.tool ? esc(lastEntry.tool) : ""}</span>
+        ${lastEntry && lastEntry.status ? `<span class="lt-status ${lastEntry.status==='error'?'err':lastEntry.status==='timeout'?'timeout':'ok'}">${esc(lastEntry.status)}</span>` : isRunning ? `<span class="lt-status ok">running</span>` : ""}
+        ${lastEntry && lastEntry.duration != null ? `<span class="lt-mod-dur">${lastEntry.duration.toFixed(1)}s</span>` : ""}
+        <span class="lt-mod-lines">${entries.length} lines</span>
+      </div>
+      <div class="lt-mod-body" id="${modId}-body">`;
+
+    // Module body — stdout/stderr lines
+    for (const e of entries.slice(-200)) {
+      if (e.stream === "cmd") {
+        html += `<div class="lt-line lt-cmd-line">
+          <span class="ts">${(e.ts||"").slice(11,19)}</span>
+          <span class="lt-prom">$</span>
+          <span class="lt-cmd-full">${esc(e.line)}</span>
+        </div>`;
+      } else if (e.stream === "stdout") {
+        html += `<div class="lt-line lt-stdout">${esc(e.line)}</div>`;
+      } else if (e.stream === "stderr") {
+        html += `<div class="lt-line lt-stderr">${esc(e.line)}</div>`;
+      }
+    }
+    html += `</div></div>`;
+  }
+
+  body.innerHTML = html + (_ltPaused ? `<div class="lt-paused">⏸ Paused — ${_lineCount()} lines captured</div>` : "") +
+    (_ltPaused ? "" : `<div style="height:1px" id="lt-anchor"></div>`);
+
+  if (wasAtBottom) {
+    const anchor = document.getElementById("lt-anchor");
+    if (anchor) anchor.scrollIntoView({behavior: "smooth", block: "end"});
+    else body.scrollTop = body.scrollHeight;
+  }
+}
+
+function renderLiveTerminal(cid) {
+  const el = document.getElementById("tab-terminal");
+  if (!el) return;
+  _ltActiveCid = cid;
+  _ltEnsurePolling();
+  el.innerHTML = `
+    <div class="section-shell">
+      <div class="section-head">
+        <div class="section-head-main">
+          <div class="section-kicker">Live Terminal</div>
+          <div class="section-title">Verbose tool output — stdout & stderr in real time</div>
+          <div class="section-sub">Each module is a collapsible process. Green = stdout, Red = stderr. Click module headers to expand/collapse.</div>
+        </div>
+        <div class="section-actions">
+          <span class="sec-cnt" id="lt-cnt">${_lineCount()} lines</span>
+        </div>
+      </div>
+      <div class="lt-wrap">
+        <div class="lt-hdr">
+          <div class="lt-dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+          <span>scantrely@asm:~$ pipeline monitor — ${esc(cid)}</span>
+          <span style="margin-left:auto;display:flex;gap:8px">
+            <span id="lt-live-badge" style="display:none;color:#4ade80;font-weight:600">⬤ LIVE</span>
+            <button id="lt-pause-btn" class="btn btn-secondary btn-icon" onclick="toggleLTPause()">${_ltPaused ? '▶ Resume' : '⏸ Pause'}</button>
+            <button class="btn btn-secondary btn-icon" onclick="_ltModules={};_ltSince=Date.now()/1000;_renderLTTerminal()" aria-label="Clear terminal">↻ Clear</button>
+          </span>
+        </div>
+        <div class="lt-body" id="lt-body"></div>
+      </div>
+    </div>`;
+  _renderLTTerminal();
+}
+
+function startLTPoll(cid) { _ltActiveCid = cid; _ltEnsurePolling(); }
+function stopLTPoll() { if (_ltPoll) { clearInterval(_ltPoll); _ltPoll = null; } }
+function toggleLTPause() {
+  _ltPaused = !_ltPaused;
+  const btn = document.getElementById("lt-pause-btn");
+  if (btn) btn.textContent = _ltPaused ? "▶ Resume" : "⏸ Pause";
+}
+async function fetchLT(cid) { _ltActiveCid = cid; return _fetchLT(); }
+
+
+// ════════════════════════════════════════════════════════════════════════
+//  ALERTS TAB
+// ════════════════════════════════════════════════════════════════════════
+async function renderAlertsTab(co) {
+  const el = document.getElementById("tab-alerts");
+  if (!el) return;
+  el.innerHTML = `<div class="skel skel-card"></div><div class="skel skel-card"></div>`;
+
+  try {
+    const r = await fetch(`/api/alerts/${co.id}`, {headers:_authHeaders()});
+    if (!r.ok) { el.innerHTML = `<div class="diff-empty">Alerts unavailable</div>`; return; }
+    const alerts = await r.json();
+    const alertList = alerts.alerts || alerts || [];
+    var badge = document.getElementById("tc-alerts");
+    if (badge) badge.textContent = alertList.length || "";
+
+    const rulesR = await fetch(`/api/alert-rules/${co.id}`, {headers:_authHeaders()});
+    const rules = rulesR.ok ? await rulesR.json() : [];
+
+    let html = `<div class="section-hdr"><h3>🚨 Alert Rules</h3>
+      <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick="addAlertRule('${esc(co.id)}')">＋ Add Rule</button></div>`;
+
+    for (const rule of (rules.rules || rules || [])) {
+      const chs = (rule.channels || []).map(c => `<span class="channel-badge ${c}">${c}</span>`).join(' ');
+      html += `<div class="rule-row">
+        <div><div class="rule-name">${esc(rule.name||rule.rule_type)}</div><div class="rule-type">${esc(rule.rule_type)} · ${chs || 'no channels'}</div></div>
+        <label class="toggle"><input type="checkbox" ${rule.enabled ? 'checked' : ''} data-rid="${esc(rule.id)}" onchange="toggleAlertRule('${esc(co.id)}','${esc(rule.id)}',this.checked)"><span class="slider"></span></label>
+      </div>`;
+    }
+    if (!(rules.rules || rules || []).length) html += `<div class="diff-empty">No alert rules configured</div>`;
+
+    html += `<div class="section-hdr" style="margin-top:24px"><h3>📋 Recent Alerts</h3><span class="section-count">${(alerts.alerts||alerts||[]).length}</span></div>`;
+    html += `<div class="alert-list">`;
+    for (const a of (alerts.alerts || alerts || []).slice(0, 50)) {
+      html += `<div class="alert-item">
+        <div class="alert-sev ${a.severity}"></div>
+        <div class="alert-body">
+          <div class="alert-title">${esc(a.title)}</div>
+          <div class="alert-desc">${esc(a.description||'')}</div>
+          <div class="alert-ts">${esc(a.created_at||a.ts||'')}</div>
+        </div>
+        ${!a.acknowledged ? `<button class="alert-ack" onclick="ackAlert('${esc(co.id)}',${a.id})">Acknowledge</button>` : `<span style="font-size:.68rem;color:var(--text3)">✓ Acked</span>`}
+      </div>`;
+    }
+    if (!(alerts.alerts || alerts || []).length) html += `<div class="diff-empty">No alerts yet — they appear after scan diffs</div>`;
+    html += `</div>`;
+
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<div class="diff-empty">Error: ${esc(e.message)}</div>`; }
+}
+
+async function toggleAlertRule(cid, rid, enabled) {
+  await fetch(`/api/alert-rules/${cid}/${rid}`, {method:'PUT', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled})});
+}
+
+async function addAlertRule(cid) {
+  const name = prompt("Rule name (e.g. 'New Hosts'):");
+  if (!name) return;
+  const type = prompt("Rule type: new_host, new_port, new_tech, status_change, waf_change, cert_expiring, cve_critical");
+  if (!type) return;
+  const channels = prompt("Channels (comma-separated): slack, discord, email, webhook","slack");
+  await fetch(`/api/alert-rules/${cid}`, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({name, rule_type:type, channels:(channels||'').split(',').map(c=>c.trim()).filter(Boolean)})});
+  reloadServerData().then(() => renderCompanyView(allCompanies().find(c=>c.id===cid)));
+}
+
+async function ackAlert(cid, aid) {
+  await fetch(`/api/alerts/${cid}/${aid}/ack`, {method:'POST', headers:_authHeaders()});
+  reloadServerData().then(() => renderCompanyView(allCompanies().find(c=>c.id===cid)));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  ASSET TIMELINE TAB
+// ════════════════════════════════════════════════════════════════════════
+async function renderTimelineTab(co) {
+  const el = document.getElementById("tab-timeline");
+  if (!el) return;
+  el.innerHTML = `<div class="skel skel-card"></div><div class="skel skel-card"></div>`;
+
+  try {
+    const r = await fetch(`/api/timeline/${co.id}?limit=100`, {headers:_authHeaders()});
+    if (!r.ok) { el.innerHTML = `<div class="diff-empty">Timeline unavailable</div>`; return; }
+    const entries = await r.json();
+
+    const timelineList = entries.timeline || entries || [];
+    var tbadge = document.getElementById("tc-timeline");
+    if (tbadge) tbadge.textContent = timelineList.length || "";
+    let html = `<div class="section-hdr"><h3>📊 Asset Timeline</h3><span class="section-count">${timelineList.length} snapshots</span></div>`;
+    html += `<div class="timeline-list">`;
+    for (const e of timelineList.slice(0, 80)) html += _timelineRow(e);
+    if (!(entries.timeline || entries || []).length) html += `<div class="diff-empty">No timeline data — run a scan first</div>`;
+    html += `</div>`;
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<div class="diff-empty">Error: ${esc(e.message)}</div>`; }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  SCAN DIFF TAB
+// ════════════════════════════════════════════════════════════════════════
+async function renderDiffTab(co) {
+  const el = document.getElementById("tab-diff");
+  if (!el) return;
+  el.innerHTML = `<div class="skel skel-card"></div><div class="skel skel-card"></div>`;
+
+  try {
+    const r = await fetch(`/api/diff/${co.id}`, {headers:_authHeaders()});
+    if (!r.ok) { el.innerHTML = `<div class="diff-empty">Diff unavailable</div>`; return; }
+    const diff = await r.json();
+
+    if (diff.error) {
+      el.innerHTML = `<div class="diff-empty">${esc(diff.error)}${diff.current_hosts ? ` (${diff.current_hosts} hosts in current scan)` : ''}</div>`;
+      return;
+    }
+
+    // Handle both SQLite format (new_hosts/removed_hosts) and PostgreSQL format (new/removed/changed)
+    const news = (diff.new || []).map(h => typeof h === 'string' ? {host:h} : h);
+    const removed = (diff.removed || []).map(h => typeof h === 'string' ? {host:h} : h);
+    const changed = diff.changed || [];
+    // SQLite port_changes → adapt to changed format
+    if (diff.port_changes && !changed.length) {
+      for (const pc of diff.port_changes) {
+        changed.push({host: pc.host, changes: {ports: {from: pc.removed||[], to: pc.added||[]}}});
+      }
+    }
+
+    var dbadge = document.getElementById("tc-diff");
+    if (dbadge) { var dc = news.length + removed.length + changed.length; dbadge.textContent = dc || ""; }
+    let html = `<div class="section-hdr"><h3>🔍 Scan Diff</h3><span class="section-count">${diff.curr_ts ? esc(diff.curr_ts.slice(0,16)) : 'vs previous'}</span></div>`;
+    
+    html += `<div class="stats-row">
+      <div class="stat-card"><div class="stat-value" style="color:var(--green)">+${news.length}</div><div class="stat-label">New Hosts</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:var(--red)">-${removed.length}</div><div class="stat-label">Removed</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:var(--yellow)">~${changed.length}</div><div class="stat-label">Changed</div></div>
+    </div>`;
+
+    if (news.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--green);font-size:.82rem;margin-bottom:8px">＋ New (${news.length})</h4>`;
+      for (const h of news.slice(0, 30)) html += `<div class="diff-item"><div class="diff-host">${esc(h.host||'?')}</div>${h.ip ? `<div class="diff-field"><span class="df-label">IP:</span><span class="df-new">${esc(h.ip)}</span></div>`:''}</div>`;
+      html += `</div>`;
+    }
+
+    if (removed.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--red);font-size:.82rem;margin-bottom:8px">− Removed (${removed.length})</h4>`;
+      for (const h of removed.slice(0, 30)) html += `<div class="diff-item"><div class="diff-host" style="color:var(--red)">${esc(h.host||'?')}</div></div>`;
+      html += `</div>`;
+    }
+
+    if (changed.length) {
+      html += `<div class="diff-section"><h4 style="color:var(--yellow);font-size:.82rem;margin-bottom:8px">~ Changed (${changed.length})</h4>`;
+      for (const item of changed.slice(0, 30)) {
+        html += `<div class="diff-item"><div class="diff-host">${esc(item.host)}</div>`;
+        for (const [field, vals] of Object.entries(item.changes||{})) {
+          html += `<div class="diff-field"><span class="df-label">${esc(field)}:</span><span class="df-old">${esc(JSON.stringify(vals.from))}</span><span class="df-arr">→</span><span class="df-new">${esc(JSON.stringify(vals.to))}</span></div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+
+    if (!news.length && !removed.length && !changed.length) html += `<div class="diff-empty">No changes detected between scans</div>`;
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<div class="diff-empty">Error: ${esc(e.message)}</div>`; }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  FALSE POSITIVE MANAGER
+// ════════════════════════════════════════════════════════════════════════
+
+function openFPModal(host, title, cid) {
+  window._fpHost  = host;
+  window._fpTitle = title;
+  window._fpCid   = cid || window._fpCurrentCid || "";
+  document.getElementById("fp-host").textContent  = host || "(any host)";
+  document.getElementById("fp-title").textContent = title;
+  document.getElementById("fp-reason").value = "";
+  document.getElementById("fp-error").style.display = "none";
+  document.getElementById("modal-fp").classList.add("show");
+}
+
+function closeFPModal() {
+  document.getElementById("modal-fp").classList.remove("show");
+}
+
+async function submitFP() {
+  const cid    = window._fpCid;
+  const reason = document.getElementById("fp-reason").value.trim();
+  const errEl  = document.getElementById("fp-error");
+  if (!reason) { errEl.textContent = "Reason is required."; errEl.style.display = "block"; return; }
+  if (!cid)    { errEl.textContent = "Company not identified."; errEl.style.display = "block"; return; }
+  try {
+    const r = await fetch(`/api/whitelist/${cid}`, {
+      method: "POST",
+      headers: {..._authHeaders(), "Content-Type": "application/json"},
+      body: JSON.stringify({host: window._fpHost, title: window._fpTitle, reason}),
+    });
+    if (!r.ok) throw await _apiErr(r);
+    closeFPModal();
+    // Remove finding card from current view
+    const co = allCompanies().find(c => c.id === cid);
+    if (co) renderFindingsTab(co);
+    showToast("Finding marked as false positive.");
+  } catch(e) {
+    errEl.textContent = "Error: " + e.message;
+    errEl.style.display = "block";
+  }
+}
+
+async function loadSuppressedFindings(cid) {
+  const tab = document.getElementById("tab-suppressed");
+  if (!tab) return;
+  tab.innerHTML = `<div class="skel skel-card"></div><div class="skel skel-card"></div>`;
+  try {
+    const r = await fetch(`/api/whitelist/${cid}`, {headers: _authHeaders()});
+    if (!r.ok) { tab.innerHTML = `<div class="diff-empty">Could not load suppressed findings</div>`; return; }
+    const entries = await r.json();
+    if (!entries.length) {
+      tab.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✓</div><div class="empty-state-title">No suppressed findings</div><div class="empty-state-copy">Findings you mark as false-positive will appear here and can be restored at any time.</div></div>`;
+      return;
+    }
+    const listHtml = entries.map(e => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border);font-size:.73rem">
+        <div style="flex:1;min-width:0">
+          <div style="color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(e.title)}</div>
+          <div style="color:var(--text3);margin-top:2px">${esc(e.host)} · ${esc(e.reason||'—')} · by ${esc(e.suppressed_by||'?')}</div>
+        </div>
+        <button class="btn btn-secondary" style="font-size:.62rem;padding:2px 8px;color:var(--red);flex-shrink:0"
+          onclick="restoreFinding('${esc(cid)}','${esc(e.id)}',this)">Restore</button>
+      </div>`).join("");
+    tab.innerHTML = `
+      <div class="section-shell">
+        <div class="section-head"><div class="section-head-main">
+          <div class="section-kicker">Suppressed Findings</div>
+          <div class="section-title">${entries.length} suppressed</div>
+          <div class="section-sub">Findings marked as false-positive or out-of-scope. Click Restore to bring them back into the active queue.</div>
+        </div></div>
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden" id="fp-suppressed-list">${listHtml}</div>
+      </div>`;
+  } catch(e) {
+    tab.innerHTML = `<div class="diff-empty">Error: ${esc(e.message)}</div>`;
+  }
+}
+
+async function restoreFinding(cid, wid, btn) {
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/whitelist/${cid}/${wid}`, {method:"DELETE", headers:_authHeaders()});
+    if (!r.ok) throw await _apiErr(r);
+    await loadSuppressedFindings(cid);
+    showToast("Finding restored.");
+  } catch(e) {
+    btn.disabled = false;
+    alert("Error: " + e.message);
+  }
+}
+
+function showToast(msg) {
+  let t = document.getElementById("asm-toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "asm-toast";
+    t.style.cssText = "position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 18px;font-size:.8rem;color:var(--text1);z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.4);transition:opacity .3s";
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = "1";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.opacity = "0"; }, 3000);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  HISTORICAL TREND CHARTS
+// ════════════════════════════════════════════════════════════════════════
+
+async function loadTrendCharts(cid) {
+  const el = document.getElementById("ov-trends");
+  if (!el) return;
+  el.innerHTML = `<span style="color:var(--text3);font-size:.75rem">Loading trend data…</span>`;
+  try {
+    const r = await fetch(`/api/stats-history/${cid}?limit=20`, {headers: _authHeaders()});
+    if (!r.ok) { el.innerHTML = ""; return; }
+    const stats = await r.json();
+    if (!stats.length) { el.innerHTML = `<span style="color:var(--text3);font-size:.75rem">No historical data yet. Run more scans to see trends.</span>`; return; }
+
+    const labels = stats.map(s => s.scanned_at ? s.scanned_at.substring(0,10) : "?");
+    const mkSparkline = (values, color, label) => {
+      const max = Math.max(...values, 1);
+      const w = 120, h = 40;
+      const pts = values.map((v,i) => {
+        const x = (i / Math.max(values.length-1,1)) * (w-4) + 2;
+        const y = h - 2 - ((v / max) * (h-6));
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      const lastVal = values[values.length-1];
+      const firstVal = values[0];
+      const trend = lastVal > firstVal ? "▲" : lastVal < firstVal ? "▼" : "—";
+      const trendColor = label.includes("finding") ? (lastVal > firstVal ? "var(--red)" : "var(--teal)") : (lastVal > firstVal ? "var(--teal)" : "var(--text3)");
+      return `<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;min-width:140px">
+        <div style="font-size:.62rem;color:var(--text3);text-transform:uppercase;margin-bottom:4px">${label}</div>
+        <div style="font-size:1.2rem;font-weight:700;color:var(--text1)">${lastVal} <span style="font-size:.7rem;color:${trendColor}">${trend}</span></div>
+        <svg width="${w}" height="${h}" style="display:block;margin-top:4px" viewBox="0 0 ${w} ${h}">
+          <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="${((values.length-1)/Math.max(values.length-1,1))*(w-4)+2}" cy="${h-2-((values[values.length-1]/max)*(h-6))}" r="3" fill="${color}"/>
+        </svg>
+      </div>`;
+    };
+
+    el.innerHTML = `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">
+        ${mkSparkline(stats.map(s=>s.subdomains||0),  "var(--teal)",   "Hosts")}
+        ${mkSparkline(stats.map(s=>s.live_hosts||0),  "var(--blue)",   "Live Hosts")}
+        ${mkSparkline(stats.map(s=>s.findings_critical||0), "var(--red)",  "Critical Findings")}
+        ${mkSparkline(stats.map(s=>s.findings_high||0),     "var(--orange)","High Findings")}
+        ${mkSparkline(stats.map(s=>s.open_ports||0),  "#a78bfa",       "Open Ports")}
+      </div>`;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--text3);font-size:.75rem">Trend data unavailable.</span>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  BULK COMPANY IMPORT
+// ════════════════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════════════════
+async function initApp() {
+  if (SERVER_MODE) {
+    document.getElementById("footer-gen").textContent = "Server mode";
+    await reloadServerData();
+    await loadPlaywrightDefaults();
+    _startJobCountPoll();
+  } else {
+    document.getElementById("footer-gen").textContent =
+      typeof window.ASM_DATA !== "undefined" ? "Live data" : "Demo data";
+  }
+  const gen = DATA.generated
+    ? new Date(DATA.generated).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+    : "—";
+  document.getElementById("footer-date").textContent = gen;
+  renderSidebar();
+  showPage("companies");
+  syncCompanyTabsAccessibility();
+  // Apply persisted language translations after dynamic render
+  if (typeof applyTranslations === 'function') {
+    const savedLang = localStorage.getItem('lang') || (window.appConfig && window.appConfig.defaultLanguage) || 'en';
+    applyTranslations(savedLang);
+  }
+  // Mark as initialized for hash routing
+  if (typeof ASM !== 'undefined') ASM.initialized = true;
+}
+
+document.addEventListener("DOMContentLoaded", async () => {
+  initGroupCountObserver();
+  const ok = await checkAuth();
+  if (ok) await initApp();
+  // Close modals on overlay click
+  document.getElementById("modal-add").addEventListener("click",    function(e){ if(e.target===this) closeAddCompany(); });
+  document.getElementById("modal-scan").addEventListener("click",   function(e){ if(e.target===this) closeScanModal(); });
+  document.getElementById("modal-admin").addEventListener("click",  function(e){ if(e.target===this) closeAdminModal(); });
+});
+
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth > 860) closeMobileNav();
+  try { initThreatMaps(); } catch(e) {}
+});
+
+// ════════════════════════════════════════════════════════════════════════
+//  HOST DETAIL DRAWER
+// ════════════════════════════════════════════════════════════════════════
+
+function openHostDrawer(hostname) {
+  const overlay = document.getElementById('host-drawer-overlay');
+  const drawer = document.getElementById('host-drawer');
+  const titleEl = document.getElementById('hd-title');
+  const statusEl = document.getElementById('hd-status');
+  const bodyEl = document.getElementById('hd-body');
+  if (!drawer) return;
+
+  // Look up host from current company
+  const co = allCompanies().find(c => c.id === state.currentId);
+  const hosts = co ? (co.hosts || []) : (_sub_hosts || _co_ports || []);
+  const h = hosts.find(x => x.host === hostname) || {};
+  const sc = h.status_code;
+  const statusCls = sc ? (sc < 300 ? 's2' : sc < 400 ? 's3' : sc < 500 ? 's4' : 's5') : 'na';
+  const statusText = sc ? `${sc}` : 'n/a';
+  const statusColor = sc ? (sc < 300 ? '#22c55e' : sc < 400 ? '#fbbf24' : sc < 500 ? '#fb923c' : '#f43f5e') : 'var(--text3)';
+
+  titleEl.textContent = h.host || 'Unknown';
+  statusEl.textContent = statusText;
+  statusEl.style.background = `rgba(${sc<300?'34,197,94':sc<400?'251,191,36':sc<500?'251,146,60':'244,63,94'},0.1)`;
+  statusEl.style.color = statusColor;
+  statusEl.style.border = `1px solid ${statusColor}33`;
+
+  const portDetails = h.port_details || [];
+  const portMap = Object.fromEntries(portDetails.map(pd => [pd.port, pd]));
+  const portsHtml = (h.ports || []).length
+    ? `<div class="hd-section"><div class="hd-section-title">Open Ports</div><div class="hd-badge-row">${h.ports.map(p => {
+        if (portMap[p]) return `<span class="port-c" style="font-size:.65rem" title="${esc(portMap[p].category||'')}">${p}:${esc(portMap[p].service||'')}</span>`;
+        return `<span class="port-c" style="font-size:.65rem">${p}</span>`;
+      }).join('')}</div></div>`
+    : '<div class="hd-section"><div class="hd-section-title">Open Ports</div><div style="color:var(--text3);font-size:.68rem">None detected</div></div>';
+
+  const techHtml = (h.technologies || []).length
+    ? `<div class="hd-section"><div class="hd-section-title">Technology Stack</div><div class="hd-badge-row">${h.technologies.map(t => `<span class="sd-tech-badge">${esc(t)}</span>`).join('')}</div></div>`
+    : '';
+
+  const cnames = h.cnames || [];
+  const cnameHtml = cnames.length
+    ? `<div class="hd-section"><div class="hd-section-title">CNAME Chain</div>${cnames.map(c => `<div class="hd-row"><span class="hd-k">→</span><span class="hd-v hi">${esc(typeof c === 'string' ? c : c.cname || c)}</span></div>`).join('')}</div>`
+    : '';
+
+  const certHtml = h.cert_info
+    ? `<div class="hd-section"><div class="hd-section-title">SSL Certificate</div>
+      <div class="hd-row"><span class="hd-k">Issuer</span><span class="hd-v">${esc(h.cert_info.issuer || '—')}</span></div>
+      <div class="hd-row"><span class="hd-k">Expires</span><span class="hd-v ${h.cert_info.expiring_soon?'warn':''}">${esc(h.cert_info.not_after || '—')}${h.cert_info.expiring_soon?' ⚠':''}</span></div>
+    </div>`
+    : '';
+
+  bodyEl.innerHTML = `
+    <div class="hd-section">
+      <div class="hd-section-title">Identity</div>
+      <div class="hd-row"><span class="hd-k">Host</span><span class="hd-v hi">${esc(h.host||'—')}</span></div>
+      <div class="hd-row"><span class="hd-k">IP</span><span class="hd-v">${esc(h.ip||'—')}</span></div>
+      <div class="hd-row"><span class="hd-k">Title</span><span class="hd-v">${esc(h.title||'No title')}</span></div>
+      <div class="hd-row"><span class="hd-k">WAF/CDN</span><span class="hd-v">${esc(h.waf||'Direct')}</span></div>
+      ${h.cloud_provider ? `<div class="hd-row"><span class="hd-k">Cloud</span><span class="hd-v hi">☁ ${esc(h.cloud_provider)}</span></div>` : ''}
+      ${h.asn ? `<div class="hd-row"><span class="hd-k">ASN</span><span class="hd-v">${esc(h.asn)}</span></div>` : ''}
+    </div>
+    ${h.screenshot ? `<div class="hd-section"><div class="hd-section-title">Screenshot</div>
+      <a href="${esc('/' + h.screenshot)}" target="_blank" rel="noopener">
+        <img src="${esc('/' + h.screenshot)}" style="width:100%;max-width:400px;border-radius:8px;border:1px solid var(--border);cursor:pointer" onerror="this.style.display='none'" alt="Screenshot of ${esc(h.host)}">
+      </a></div>` : ''}
+    ${portsHtml}
+    ${cnameHtml}
+    ${certHtml}
+    ${techHtml}
+  `;
+
+  drawer.classList.add('open');
+  overlay.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeHostDrawer() {
+  const overlay = document.getElementById('host-drawer-overlay');
+  const drawer = document.getElementById('host-drawer');
+  if (drawer) drawer.classList.remove('open');
+  if (overlay) overlay.classList.remove('show');
+  document.body.style.overflow = '';
+}
+
+// Legacy stub — settings now lives at showPage('settings')
+function openSettings(){ showPage("settings"); }
+
+Object.assign(window, {
+  loadJobs,
+  openJobsQueue,
+  openJobDetail,
+  openJobCompanyPipeline,
+  cancelJob,
+  toggleJobDrilldown,
+  exitJobDrilldown,
+  openDomainResults,
+  _onJobDrillSearch,
+});

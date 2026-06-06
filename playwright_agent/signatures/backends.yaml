@@ -1,0 +1,57 @@
+- name: ASP.NET WebForms
+  category: backend_framework
+  source: html
+  match: regex
+  pattern: "__VIEWSTATE|__EVENTVALIDATION|__doPostBack|Sys\\.WebForms|UpdatePanel"
+  confidence: high
+  security_relevance: "Legacy WebForms surface; ViewState/EventValidation deserve dedicated manual review."
+  manual_follow_up: "Check ViewState flags, postback behavior, .axd exposure, and custom errors."
+- name: ASP.NET / IIS
+  category: backend_framework
+  source: headers
+  match: regex
+  pattern: "X-AspNet-Version|X-AspNetMvc-Version|Server:.*Microsoft-IIS|X-Powered-By: ASP.NET|AspNetCoreModule"
+  confidence: high
+  security_relevance: "Microsoft stack; pair with cookie and hidden-field analysis."
+  manual_follow_up: "Inspect cookie flags, .axd endpoints, and legacy handlers."
+- name: JSF
+  category: backend_framework
+  source: html
+  match: regex
+  pattern: "javax\\.faces\\.ViewState|javax\\.faces|jsfAjax"
+  confidence: high
+  security_relevance: "JSF legacy framework; view state and postback patterns are relevant."
+  manual_follow_up: "Check JSF view state handling, postback tokens, and error leakage."
+- name: Struts
+  category: backend_framework
+  source: html
+  match: regex
+  pattern: "org\\.apache\\.struts|struts2|\\.action"
+  confidence: medium
+  security_relevance: "Struts surface; action endpoints and server errors deserve manual review."
+  manual_follow_up: "Inspect action endpoints and input binding paths."
+- name: Django
+  category: backend_framework
+  source: cookies
+  match: regex
+  pattern: "csrftoken|sessionid|django"
+  confidence: medium
+  security_relevance: "Django hints; CSRF and admin endpoints are worth checking."
+  manual_follow_up: "Inspect /admin/, CSRF flow, and session flags."
+- name: Flask / Werkzeug
+  category: backend_framework
+  source: headers
+  match: regex
+  pattern: "Werkzeug|Flask|gunicorn"
+  confidence: medium
+  security_relevance: "Python backend hints; debug errors or docs endpoints may be exposed."
+  manual_follow_up: "Inspect /docs, error handling, and cookie/session behavior."
+- name: Express
+  category: backend_framework
+  source: headers
+  match: regex
+  pattern: "X-Powered-By: Express|connect\\.sid"
+  confidence: medium
+  security_relevance: "Node/Express hints; focus on API routes and session handling."
+  manual_follow_up: "Inspect auth/session cookies and route-level authorization."
+

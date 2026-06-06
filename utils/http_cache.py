@@ -1,0 +1,119 @@
+"""
+SQLite-backed HTTP response cache shared between pipeline phases.
+Reduces duplicate HTTP requests to the same URLs across phases.
+
+Storage: scans/<scan_id>/http_cache.db
+TTL: duration of the scan (cache cleared on new scan)
+"""
+
+import sqlite3, hashlib, json, time, os
+from pathlib import Path
+from typing import Any
+from urllib.request import urlopen, Request
+
+
+class HttpCache:
+    """Thread-safe SQLite cache for HTTP responses during a scan."""
+
+    def __init__(self, db_path: str):
+        self._db_path = db_path
+        self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._db_path, timeout=5)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        return conn
+
+    def _init_db(self):
+        with self._connect() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS http_cache (
+                    method  TEXT NOT NULL,
+                    url     TEXT NOT NULL,
+                    status  INTEGER,
+                    headers TEXT,
+                    body_sha256 TEXT,
+                    body_path   TEXT,
+                    created_at  REAL,
+                    PRIMARY KEY (method, url)
+                )
+            """)
+            conn.commit()
+
+    def get(self, method: str, url: str) -> dict | None:
+        """Return cached response dict or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT status, headers, body_sha256, body_path FROM http_cache WHERE method=? AND url=?",
+                (method.upper(), url)
+            ).fetchone()
+            if not row:
+                return None
+            status, headers_json, sha, body_path = row
+            body = None
+            if body_path and os.path.exists(body_path):
+                try:
+                    with open(body_path, "rb") as f:
+                        body = f.read()
+                except Exception:
+                    pass
+            return {
+                "status": status,
+                "headers": json.loads(headers_json) if headers_json else {},
+                "body_sha256": sha,
+                "body": body,
+            }
+
+    def set(self, method: str, url: str, status: int, headers: dict, body: bytes | None):
+        """Store a response in the cache."""
+        sha = hashlib.sha256(body or b"").hexdigest()
+        body_path = None
+
+        # Bodies > 100KB go to disk, only hash in DB
+        if body and len(body) > 102400:
+            body_dir = Path(self._db_path).parent / "http_bodies"
+            body_dir.mkdir(parents=True, exist_ok=True)
+            body_path = str(body_dir / f"{sha}.bin")
+            with open(body_path, "wb") as f:
+                f.write(body)
+
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT OR REPLACE INTO http_cache (method, url, status, headers, body_sha256, body_path, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (method.upper(), url, status, json.dumps(dict(headers or {})),
+                 sha, body_path, time.time())
+            )
+            conn.commit()
+
+    def fetch(self, url: str, method: str = "GET", headers: dict | None = None,
+              timeout: int = 15, force: bool = False) -> dict:
+        """Fetch URL with caching. Returns dict with status, headers, body_sha256, body."""
+        if not force:
+            cached = self.get(method, url)
+            if cached is not None:
+                return cached
+
+        req = Request(url, headers=headers or {"User-Agent": "ASM-Platform/1.0"})
+        req.method = method.upper()
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                resp_headers = dict(resp.headers)
+                body = resp.read()
+                result = {
+                    "status": resp.status,
+                    "headers": resp_headers,
+                    "body_sha256": hashlib.sha256(body).hexdigest(),
+                    "body": body,
+                }
+                self.set(method, url, resp.status, resp_headers, body)
+                return result
+        except Exception:
+            return {"status": 0, "headers": {}, "body_sha256": "", "body": None}
+
+    def clear(self):
+        """Clear all cached entries."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM http_cache")
+            conn.commit()

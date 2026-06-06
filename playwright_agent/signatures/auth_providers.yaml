@@ -1,0 +1,25 @@
+- name: Keycloak
+  category: auth_provider
+  source: html
+  match: regex
+  pattern: "/realms/|/protocol/openid-connect/|KEYCLOAK_SESSION|KEYCLOAK_IDENTITY"
+  confidence: high
+  security_relevance: "OIDC provider hints; token/redirect behavior is important."
+  manual_follow_up: "Inspect redirect_uri, logout, and session storage."
+- name: Auth0
+  category: auth_provider
+  source: html
+  match: regex
+  pattern: "auth0\\.com|auth0"
+  confidence: medium
+  security_relevance: "Auth0 surface; redirect and session handling matter."
+  manual_follow_up: "Inspect callback URLs and token storage."
+- name: Azure AD
+  category: auth_provider
+  source: html
+  match: regex
+  pattern: "login\\.microsoftonline\\.com|sts\\.windows\\.net|entra"
+  confidence: medium
+  security_relevance: "Microsoft identity provider hints."
+  manual_follow_up: "Inspect OIDC callbacks and session flags."
+

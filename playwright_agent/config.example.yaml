@@ -1,0 +1,11 @@
+scope:
+  - example.com
+output: reports/report.md
+evidence_dir: evidence
+max_pages: 50
+max_depth: 3
+timeout: 20
+slow_mo: 0
+user_agent: ""
+auth_state: null
+auth_state_b: null

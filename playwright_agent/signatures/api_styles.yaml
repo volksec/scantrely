@@ -1,0 +1,33 @@
+- name: GraphQL
+  category: api_style
+  source: html
+  match: regex
+  pattern: "/graphql|graphiql|apollo|__schema|\\bquery\\b|\\bmutation\\b"
+  confidence: high
+  security_relevance: "GraphQL surface; object-level authorization and schema exposure matter."
+  manual_follow_up: "Inspect introspection, auth by object, and batch query behavior."
+- name: SOAP
+  category: api_style
+  source: html
+  match: regex
+  pattern: "\\?wsdl|soapAction|text/xml|\\.asmx|\\.svc"
+  confidence: high
+  security_relevance: "SOAP surface; WSDL and operation mapping matter."
+  manual_follow_up: "Inspect WSDL exposure and operation-level authorization."
+- name: OData
+  category: api_style
+  source: html
+  match: regex
+  pattern: "/odata/|\\$filter|\\$select|\\$expand|\\$orderby|\\$count"
+  confidence: high
+  security_relevance: "OData surface; query expansion and object access matter."
+  manual_follow_up: "Inspect filter/expand behavior and authorization on expanded entities."
+- name: WebSocket
+  category: api_style
+  source: js
+  match: regex
+  pattern: "new WebSocket\\(|wss?://|socket\\.io"
+  confidence: medium
+  security_relevance: "Realtime channel hints; auth and topic isolation are important."
+  manual_follow_up: "Inspect socket auth and message authorization."
+
