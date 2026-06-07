@@ -4,6 +4,9 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Database / data
 *.db
@@ -22,15 +25,25 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+AGENTS.md
+CLAUDE.md
+.agents/
+.claude/
+.codex/
+.reversa/
+_reversa_sdd/
+.gopath/
 
 # Scans (user data)
 scans/*/
+core/checkpoints/*.json
 
 # Playwright
 playwright_agent/evidence/
 
 # Docker
 docker/
+node_modules/
 
 # Sensitive
 config/admins.json

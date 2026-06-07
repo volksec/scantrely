@@ -923,6 +923,46 @@ class ASMDatabase:
             out.append(item)
         return out
 
+    def latest_tool_run(self, company_id: str, module: str) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, company_id, module, tool, argv_json, status, exit_code,
+                       duration, stdout_tail, stderr_tail, started_at, finished_at
+                FROM tool_runs
+                WHERE company_id = ?
+                  AND module = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (company_id, module),
+            ).fetchone()
+        if not row:
+            return None
+        item = dict(row)
+        item["argv"] = self._json_loads(item.pop("argv_json", "[]"), [])
+        return item
+
+    def recent_finished_pipeline_jobs(self, company_id: str, target: str, *, limit: int = 20) -> list[dict]:
+        limit = max(1, min(int(limit), 100))
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, job_type, company_id, target, options_json, status,
+                       priority, attempts, max_attempts, created_by, error,
+                       created_at, updated_at, started_at, finished_at
+                FROM jobs
+                WHERE company_id = ?
+                  AND target = ?
+                  AND job_type = 'pipeline'
+                  AND status = 'done'
+                ORDER BY finished_at DESC, updated_at DESC
+                LIMIT ?
+                """,
+                (company_id, target, limit),
+            ).fetchall()
+        return [self._job_from_row(row) for row in rows]
+
     def clear_tool_runs(self, company_id: str = "") -> int:
         with self._lock, self._connect() as conn:
             if company_id:
@@ -1148,6 +1188,41 @@ class ASMDatabase:
             )
             conn.commit()
             return cur.rowcount > 0
+
+    def delete_job(self, job_id: str) -> bool:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            conn.commit()
+            return cur.rowcount > 0
+
+    def delete_jobs(
+        self,
+        *,
+        company_id: str = "",
+        status: str = "",
+        job_type: str = "",
+        target: str = "",
+    ) -> int:
+        clauses = []
+        params: list = []
+        if company_id:
+            clauses.append("company_id = ?")
+            params.append(company_id)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if job_type:
+            clauses.append("job_type = ?")
+            params.append(job_type)
+        if target:
+            clauses.append("target LIKE ? ESCAPE '\\'")
+            esc = target.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            params.append(f"%{esc}%")
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(f"DELETE FROM jobs {where}", tuple(params))
+            conn.commit()
+            return int(cur.rowcount or 0)
 
     def cancel_pending_jobs(self, *, company_id: str, job_type: str = "pipeline") -> int:
         now = self._now()

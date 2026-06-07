@@ -33,56 +33,16 @@ BIN_DIR = Path(__file__).parent.parent / "bin"
 # queue: all domains are submitted, only this many run at a time.
 _DOMAIN_FANOUT_WORKERS = int(os.environ.get("ASM_DOMAIN_FANOUT_WORKERS", "8") or 8)
 
-# Light-mode passive discovery: only the fast, high-yield, no-API-key-required
-# subdomain sources. Slow / rate-limited modules (amass passive, theHarvester,
-# hunterio, riddler, github_subdomains, reverse_whois, typosquat, zone_transfer,
-# dnsdumpster, asn/asnmap, related, email) are dropped so a 35k-domain sweep
-# completes in viable time. Override with ASM_LIGHT_MODULES (comma-separated).
-_LIGHT_PASSIVE_MODULES = {
-    m.strip() for m in (
-        os.environ.get("ASM_LIGHT_MODULES")
-        or "subfinder,assetfinder,certs,dns,hackertarget,alienvault_otx,rapiddns,urlscan_io"
-    ).split(",") if m.strip()
-}
-_LIGHT_BLOCKED_MODULES = {
-    m.strip() for m in (
-        os.environ.get("ASM_LIGHT_BLOCKED_MODULES")
-        or "amass,theharvester,hunterio,riddler,github_subdomains,reverse_whois,typosquat,zone_transfer,asn,asnmap,related,email"
-    ).split(",") if m.strip()
-}
-if os.environ.get("ASM_LIGHT_ALLOW_HEAVY", "0") != "1":
-    _LIGHT_PASSIVE_MODULES -= _LIGHT_BLOCKED_MODULES
-
 PIPELINE_PROFILES = {
-    # Bulk queue for tens of thousands of domains: passive discovery only,
-    # then httpx liveness for newly discovered hosts through merge_hosts.
-    "passive_bulk": {
-        "light": True,
-        "phases": ["passive"],
-        "active": False,
-    },
-    # Active but still low-risk: web fingerprinting, JS, crawl and light enum.
-    # Intended for already-discovered live hosts, not for whole-program sweeps.
-    "active_light": {
-        "light": False,
-        "phases": ["profiling", "js_tech", "js_analysis", "crawl", "enum_active"],
+    # Public pipeline for the product: discovery is only the first step. Every
+    # queued domain moves through validation, prioritization, browser evidence,
+    # and bug-bounty checks. Host caps are applied after scoring so expensive
+    # modules focus on targets most likely to produce actionable reports.
+    "bug_bounty": {
         "active": True,
-        "active_max_hosts": 25,
-        "crawl_max_hosts": 25,
+        "active_max_hosts": 40,
+        "crawl_max_hosts": 12,
         "skip_smart_scan": True,
-    },
-    # Expensive/possibly noisy checks. Run in tiny batches.
-    "active_heavy": {
-        "light": False,
-        "phases": ["portscan", "services", "vulnscan", "nuclei"],
-        "active": True,
-        "active_max_hosts": 5,
-        "crawl_max_hosts": 5,
-        "skip_smart_scan": True,
-    },
-    "full": {
-        "light": False,
-        "active": True,
     },
 }
 
@@ -282,127 +242,105 @@ def _normalize_module_envelope(module: str, payload, *, status: str | None = Non
 
 
 PIPELINE_PHASES = [
-    # ── Fase 1: Discovery Passivo (sem limite, não toca no alvo) ──────────────
     {
-        "id":         "passive",
-        "label":      "Fase 1 — Discovery Passivo",
-        "modules":    ["subfinder", "assetfinder", "theharvester", "amass", "hackertarget", "alienvault_otx", "hunterio", "riddler", "urlscan_io", "rapiddns", "github_subdomains", "dns", "email", "certs", "asn", "asnmap", "related", "reverse_whois", "typosquat", "zone_transfer"],
+        "id":         "discovery",
+        "label":      "Fase 1 — Discovery de Superfície",
+        "modules":    [
+            "subfinder", "assetfinder", "certs", "alienvault_otx",
+            "urlscan_io", "rapiddns", "hackertarget", "github_subdomains",
+            "wayback", "urlfinder",
+        ],
         "rate_phase": "passive",
         "parallel":   True,
         "merge_hosts": True,
     },
-    # ── Fase 1b: Intel & OSINT (APIs externas, ainda passivo) ─────────────────
+    {
+        "id":         "validation",
+        "label":      "Fase 2 — Validação, DNS e Escopo",
+        "modules":    ["dns", "dns_brute", "leaks"],
+        "rate_phase": "dns",
+        "parallel":   True,
+        "merge_hosts": True,
+        "recursive":  True,
+    },
     {
         "id":         "intel",
-        "label":      "Fase 1b — Intel & OSINT",
-        "modules":    ["shodan", "breach", "certstream", "phishing", "postman_collections", "apk_recon", "container_registry", "bulk_dataset"],
+        "label":      "Fase 3 — Intel Útil para Bug Bounty",
+        "modules":    [
+            "shodan", "postman_collections", "cloud", "container_registry",
+            "bulk_dataset", "breach", "phishing", "dep_confusion",
+        ],
         "rate_phase": "passive",
         "parallel":   True,
     },
-    # ── Fase 1c: Supply Chain & Cloud Leve ───────────────────────────────────
-    {
-        "id":         "supply_chain",
-        "label":      "Fase 1c — Supply Chain & Cloud",
-        "modules":    ["dep_confusion", "cloud"],
-        "rate_phase": "passive",
-        "parallel":   True,
-    },
-    # ── Fase 2: Cleanup Automático (remove garbage antes da validação) ────────
     {
         "id":         "cleanup",
-        "label":      "Fase 2 — Cleanup Automático",
+        "label":      "Fase 4 — Limpeza e Priorização",
         "modules":    [],
         "rate_phase": "passive",
         "parallel":   False,
         "internal":   True,
     },
-    # ── Fase 3: Validação DNS (primeiro contato, devagar) ─────────────────────
     {
-        "id":         "validation",
-        "label":      "Fase 3 — Validação & Enumeração DNS",
-        "modules":    ["dns_brute", "leaks"],
-        "rate_phase": "dns",
-        "parallel":   True,
-        "merge_hosts": True,
-        "recursive":  True,
-        "gate":       "has_live_hosts",
-    },
-    # ── Fase 4: Perfil do Alvo (hosts vivos) ──────────────────────────────────
-    {
-        "id":         "profiling",
-        "label":      "Fase 4 — Perfil do Alvo",
-        "modules":    ["headers", "waf", "wappalyzer", "whatweb", "vendor_fp", "service_version"],
+        "id":         "fingerprint",
+        "label":      "Fase 5 — Fingerprint Web",
+        "modules":    [
+            "headers", "waf", "wappalyzer", "whatweb", "vendor_fp",
+            "service_version", "favicon_hunt", "screenshot", "gowitness",
+        ],
         "rate_phase": "tech",
         "parallel":   True,
         "gate":       "has_live_hosts",
     },
-    # ── Fase 4b: JS Discovery (must run before js_endpoints/js_secrets) ───────
     {
-        "id":         "js_tech",
-        "label":      "Fase 4b — JS Discovery",
+        "id":         "js_discovery",
+        "label":      "Fase 6 — JS Discovery",
         "modules":    ["js"],
         "rate_phase": "tech",
         "parallel":   False,
         "gate":       "has_live_hosts",
     },
-    # ── Fase 4c: JS Analysis (consumes js_files from Fase 4b) ─────────────────
     {
-        "id":         "js_analysis",
-        "label":      "Fase 4c — JS Endpoints & Secrets",
-        "modules":    ["js_endpoints", "js_secrets"],
+        "id":         "api_mapping",
+        "label":      "Fase 7 — APIs, Endpoints e Secrets",
+        "modules":    ["js_endpoints", "js_secrets", "api_discovery_extra", "graphql"],
         "rate_phase": "tech",
         "parallel":   True,
         "gate":       "has_live_hosts",
     },
-    # ── Fase 5: Crawl & Discovery ─────────────────────────────────────────────
     {
-        "id":         "crawl",
-        "label":      "Fase 5 — Crawl & Discovery",
-        "modules":    ["wayback", "urlfinder", "screenshot", "gowitness", "favicon_hunt", "browser_crawl", "api_discovery_extra", "screenshot_diff"],
+        "id":         "browser",
+        "label":      "Fase 8 — Playwright Browser Evidence",
+        "modules":    ["browser_crawl", "browser_recon"],
         "rate_phase": "crawl",
-        "parallel":   True,
-    },
-    # ── Fase 6: Enum Ativa (controlada) ──────────────────────────────────────
-    {
-        "id":         "enum_active",
-        "label":      "Fase 6 — Enum Ativa",
-        "modules":    ["vhost", "param_mine", "origin_discovery"],
-        "rate_phase": "fuzz",
-        "parallel":   True,
+        "parallel":   False,
         "gate":       "has_live_hosts",
     },
-    # ── Fase 7: Port Scan (gate-controlled) ───────────────────────────────────
     {
-        "id":         "portscan",
-        "label":      "Fase 7 — Port Scan",
-        "modules":    ["portscan", "cloudlist", "udp_portscan"],
-        "rate_phase": "portscan",
-        "parallel":   True,
-        "gate":       "has_live_hosts",
-    },
-    # ── Fase 7b: Serviços & CMS (após port scan) ─────────────────────────────
-    {
-        "id":         "services",
-        "label":      "Fase 7b — Serviços & CMS",
-        "modules":    ["services", "cms_scan", "database_enum_extra"],
-        "rate_phase": "tech",
-        "parallel":   True,
-        "gate":       "has_open_ports",
-    },
-    # ── Fase 9: Vuln Scan ─────────────────────────────────────────────────────
-    {
-        "id":         "vulnscan",
-        "label":      "Fase 9 — Vuln Scan",
-        "modules":    ["takeover", "subjack", "cve", "cloud_enum", "cors_scan", "infra_exposure", "default_creds", "graphql", "browser_recon", "supply_chain", "github_repos", "dnssec", "waf_bypass", "smtp_probe", "snmp_probe", "host_header_injection", "open_redirect", "tableau"],
+        "id":         "bug_checks",
+        "label":      "Fase 9 — Checks Leves de Bug Bounty",
+        "modules":    [
+            "takeover", "subjack", "cors_scan", "open_redirect",
+            "host_header_injection", "infra_exposure", "cloud_enum",
+            "default_creds", "dnssec", "waf_bypass", "tableau",
+            "github_repos", "supply_chain",
+        ],
         "rate_phase": "vulnscan",
         "parallel":   True,
         "gate":       "has_live_hosts",
     },
-    # ── Fase 10: Nuclei (sempre por último — pesado, paralelo interno) ────────
+    {
+        "id":         "ports_services",
+        "label":      "Fase 10 — Portas e Serviços Priorizados",
+        "modules":    ["portscan", "cloudlist", "services", "cms_scan", "database_enum_extra"],
+        "rate_phase": "portscan",
+        "parallel":   True,
+        "gate":       "has_live_hosts",
+    },
     {
         "id":         "nuclei",
-        "label":      "Fase 10 — Nuclei Scan",
-        "modules":    ["api_panels"],
+        "label":      "Fase 11 — Templates Curados e Evidência Final",
+        "modules":    ["cve", "api_panels", "screenshot_diff"],
         "rate_phase": "vulnscan",
         "parallel":   False,
         "gate":       "has_live_hosts",
@@ -760,39 +698,82 @@ class ReconRunner:
         return self._stable_hash(scope)
 
     def _resolve_pipeline_profile(self, options: dict) -> dict:
-        """Apply a named execution profile while preserving explicit overrides."""
+        """Apply the single bug-bounty execution profile."""
         resolved = dict(options or {})
-        profile_name = str(
-            resolved.get("profile") or resolved.get("pipeline_profile") or ""
-        ).strip().lower()
-        if not profile_name:
-            return resolved
-        profile = PIPELINE_PROFILES.get(profile_name)
-        if not profile:
-            return resolved
+        profile_name = "bug_bounty"
+        profile = PIPELINE_PROFILES[profile_name]
         for key, value in profile.items():
             resolved.setdefault(key, value)
         resolved["profile"] = profile_name
+        resolved["pipeline_profile"] = profile_name
+        resolved["active"] = True
+        resolved.pop("light", None)
+        resolved.pop("phases", None)
+        resolved.pop("pipeline_phases", None)
+        resolved.setdefault("skip_smart_scan", True)
         return resolved
 
     def _selected_pipeline_modules(self, options: dict) -> set[str]:
         """Return modules that the current profile/phase selection intends to run."""
-        light_phases = None
-        if options.get("light"):
-            light_phases = {"passive"}
-        elif options.get("phases"):
-            light_phases = {str(p) for p in (options.get("phases") or [])}
-
         selected: set[str] = set()
         for phase in PIPELINE_PHASES:
-            phase_id = phase["id"]
-            if light_phases is not None and phase_id not in light_phases:
-                continue
-            modules = list(phase.get("modules") or [])
-            if light_phases is not None and phase_id == "passive":
-                modules = [m for m in modules if m in _LIGHT_PASSIVE_MODULES]
-            selected.update(modules)
+            selected.update(list(phase.get("modules") or []))
         return selected
+
+    @staticmethod
+    def _compact_failure_text(value: str, *, limit: int = 360) -> str:
+        text = re.sub(r"\s+", " ", str(value or "")).strip()
+        if not text:
+            return ""
+        sensitive_patterns = [
+            r"(?i)(token|api[_-]?key|secret|password|authorization|bearer)\s*[:=]\s*['\"]?[^'\"\s,;]+",
+            r"(?i)(-token|--token|-key|--key)\s+\S+",
+        ]
+        for pattern in sensitive_patterns:
+            text = re.sub(pattern, r"\1=<redacted>", text)
+        return text[:limit] + ("..." if len(text) > limit else "")
+
+    def _latest_tool_reason(self, cid: str, module: str) -> dict:
+        if not hasattr(self.db, "latest_tool_run"):
+            return {}
+        try:
+            run = self.db.latest_tool_run(cid, module)
+        except Exception:
+            return {}
+        if not run:
+            return {}
+
+        status = str(run.get("status") or "").strip().lower()
+        exit_code = run.get("exit_code")
+        stderr = self._compact_failure_text(run.get("stderr_tail") or "")
+        stdout = self._compact_failure_text(run.get("stdout_tail") or "")
+        duration = run.get("duration")
+        tool = str(run.get("tool") or module)
+
+        detail = ""
+        if status == "timeout":
+            detail = f"{tool} timed out"
+            if duration:
+                detail += f" after {float(duration):.1f}s"
+        elif stderr:
+            detail = f"{tool} stderr: {stderr}"
+        elif exit_code not in (None, 0):
+            detail = f"{tool} exited with code {exit_code}"
+        elif stdout:
+            detail = f"{tool} output: {stdout}"
+        elif status:
+            detail = f"{tool} finished with status '{status}'"
+        if exit_code not in (None, 0) and "exit" not in detail.lower():
+            detail += f" (exit {exit_code})"
+
+        return {
+            "tool": tool,
+            "tool_run_id": run.get("id"),
+            "tool_status": status,
+            "exit_code": exit_code,
+            "duration": duration,
+            "reason": detail,
+        }
 
     def _pipeline_execution_summary(self, cid: str, options: dict) -> tuple[list[dict], list[dict]]:
         """Return (not_done, skipped) with explicit reasons for every non-done module.
@@ -802,7 +783,7 @@ class ReconRunner:
         pipeline from ending with vague "not executed" entries.
         """
         selected_modules = self._selected_pipeline_modules(options or {})
-        profile = str((options or {}).get("profile") or ("passive_bulk" if (options or {}).get("light") else "full"))
+        profile = str((options or {}).get("profile") or "bug_bounty")
         not_done: list[dict] = []
         skipped: list[dict] = []
 
@@ -812,7 +793,7 @@ class ReconRunner:
                 if selected_modules and mod not in selected_modules:
                     reason = (
                         f"Skipped by execution profile '{profile}'. "
-                        f"This run selected phases/modules only; use profile='full' or include phase '{phase_id}' to run it."
+                        f"This run selected phases/modules only; use profile='bug_bounty' or include phase '{phase_id}' to run it."
                     )
                     skipped.append({
                         "module": mod,
@@ -825,22 +806,29 @@ class ReconRunner:
                 res = self.results.get(f"{cid}:{mod}", {})
                 status = res.get("status", "not_run")
                 reason = res.get("reason") or res.get("error") or ""
+                tool_reason = self._latest_tool_reason(cid, mod)
+                if tool_reason.get("reason") and (not reason or status in {"not_run", "error", "timeout"}):
+                    reason = tool_reason["reason"]
                 if status == "done":
                     continue
                 if status == "skipped" and reason:
-                    skipped.append({
+                    item = {
                         "module": mod,
                         "phase": phase_id,
                         "status": status,
                         "reason": reason,
-                    })
+                    }
+                    item.update({k: v for k, v in tool_reason.items() if k != "reason" and v not in (None, "")})
+                    skipped.append(item)
                     continue
-                not_done.append({
+                item = {
                     "module": mod,
                     "phase": phase_id,
                     "status": status,
                     "reason": reason or "Module was selected for this run but did not produce a terminal result",
-                })
+                }
+                item.update({k: v for k, v in tool_reason.items() if k != "reason" and v not in (None, "")})
+                not_done.append(item)
 
         return not_done, skipped
 
@@ -865,13 +853,62 @@ class ReconRunner:
                 return True
         return False
 
-    def _filter_hosts_for_options(self, hosts: list[dict], co: dict, options: dict) -> list[dict]:
-        """Restrict active profiles to the selected domains/hosts.
+    @staticmethod
+    def _bug_bounty_host_score(host: dict) -> int:
+        """Prioritize targets that tend to produce actionable bug-bounty reports."""
+        name = str(host.get("host") or "").lower()
+        title = str(host.get("title") or "").lower()
+        server = str(host.get("server") or "").lower()
+        waf = str(host.get("waf") or "").lower()
+        techs = " ".join(str(t).lower() for t in (host.get("technologies") or host.get("tech") or []))
+        haystack = " ".join([name, title, server, techs])
+        score = 0
 
-        Passive bulk jobs operate on the scoped domain list and may merge new
-        hosts. Active profiles must never accidentally scan the full company's
-        host inventory when the user selected one domain.
-        """
+        keyword_weights = {
+            "api": 30, "graphql": 35, "swagger": 35, "openapi": 35,
+            "auth": 28, "login": 28, "sso": 26, "oauth": 26,
+            "admin": 26, "dashboard": 22, "portal": 20, "console": 20,
+            "upload": 24, "file": 16, "payment": 24, "billing": 22,
+            "staging": 20, "stage": 18, "dev": 18, "test": 16, "qa": 16,
+            "internal": 18, "vpn": 16, "jenkins": 24, "gitlab": 24,
+            "jira": 18, "grafana": 20, "kibana": 20, "prometheus": 20,
+        }
+        for key, weight in keyword_weights.items():
+            if key in haystack:
+                score += weight
+
+        status = host.get("status_code")
+        if status in {200, 201, 204}:
+            score += 12
+        elif status in {301, 302, 307, 308, 401, 403}:
+            score += 8
+        elif status is not None:
+            score += 2
+        if host.get("ip"):
+            score += 6
+        if host.get("ports"):
+            score += min(12, len(host.get("ports") or []) * 3)
+        if techs:
+            score += 8
+        if "cloudflare" in waf or "akamai" in waf or "fastly" in waf:
+            score -= 3
+        if any(tok in haystack for tok in ("s3", "bucket", "blob", "storage")):
+            score += 14
+        return score
+
+    def _rank_bug_bounty_hosts(self, hosts: list[dict]) -> list[dict]:
+        return sorted(
+            hosts or [],
+            key=lambda h: (
+                self._bug_bounty_host_score(h),
+                1 if _is_responsive(h) else 0,
+                str(h.get("host") or ""),
+            ),
+            reverse=True,
+        )
+
+    def _filter_hosts_for_options(self, hosts: list[dict], co: dict, options: dict) -> list[dict]:
+        """Restrict bug bounty jobs to the selected domains/hosts."""
         hosts = [h for h in (hosts or []) if isinstance(h, dict)]
         if not hosts:
             return []
@@ -888,8 +925,8 @@ class ReconRunner:
             for d in (options.get("domains") or co.get("domains") or [])
             if self._normalize_scope_name(d)
         }
-        active_profile = bool(options.get("active")) or str(options.get("profile", "")).startswith("active_")
-        scoped_queue_run = bool(options.get("queue_domain") or options.get("light"))
+        active_profile = bool(options.get("active")) or str(options.get("profile", "")) == "bug_bounty"
+        scoped_queue_run = bool(options.get("queue_domain"))
 
         if explicit_hosts:
             filtered = [h for h in hosts if self._normalize_scope_name(h.get("host", "")) in explicit_hosts]
@@ -898,9 +935,12 @@ class ReconRunner:
         else:
             filtered = hosts
 
+        if str(options.get("profile") or "") == "bug_bounty":
+            filtered = self._rank_bug_bounty_hosts(filtered)
+
         if not filtered and active_profile:
             # If the exact domain has not been discovered yet, allow the selected
-            # domain itself to be probed by active-light modules that accept hosts.
+            # domain itself to be probed by host-based bug bounty modules.
             now = datetime.now().isoformat(timespec="seconds")
             filtered = [
                 {
@@ -1395,14 +1435,49 @@ class ReconRunner:
         }
 
     def _run_dep_confusion(self, cid: str, co: dict, options: dict) -> dict:
-        spec = importlib.util.spec_from_file_location(
-            "dep_confusion", self.base / "utils" / "dep_confusion.py"
-        )
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
         token = options.get("github_token", "") or self.get_settings().get("github_token", "")
-        checker = mod.DepConfusionChecker(github_token=token, verbose=False)
-        return checker.run(co["name"], co.get("domains", []))
+        domains = [str(d).strip() for d in (co.get("domains") or []) if str(d).strip()]
+        if not domains:
+            return {"status": "skipped", "reason": "No domains available for dependency confusion check"}
+        timeout_s = int(os.environ.get("ASM_DEP_CONFUSION_TIMEOUT", "180") or 180)
+        script = self.base / "utils" / "dep_confusion.py"
+        cmd = ["python3", str(script), *domains[:5], "--company", str(co.get("name") or cid), "--json"]
+        env = os.environ.copy()
+        if token:
+            env["GITHUB_TOKEN"] = token
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "status": "timeout",
+                "timeout": True,
+                "reason": f"dep_confusion exceeded {timeout_s}s and was killed",
+                "findings": [],
+                "summary": {},
+            }
+        if result.returncode != 0:
+            return {
+                "status": "error",
+                "reason": (result.stderr or result.stdout or f"dep_confusion exited {result.returncode}")[-1000:],
+                "findings": [],
+                "summary": {},
+            }
+        try:
+            return json.loads(result.stdout or "{}")
+        except Exception:
+            return {
+                "status": "error",
+                "reason": "dep_confusion returned invalid JSON",
+                "stdout_tail": (result.stdout or "")[-1000:],
+                "findings": [],
+                "summary": {},
+            }
 
     def _make_fn_map(self, cid: str, co: dict, options: dict, hosts: list) -> dict:
         """Build the module → callable map for the given execution context."""
@@ -3481,6 +3556,20 @@ class ReconRunner:
         # JS discovery (katana + analysis + Playwright runtime capture)
         js_data = _result("js")
         if js_data.get("js_files") or js_data.get("endpoints_found") or js_data.get("runtime_network"):
+            runtime_js_urls = list(js_data.get("runtime_js_urls") or [])
+            if not runtime_js_urls:
+                # Older checkpoints only kept runtime_js_count. Recover the
+                # visible runtime JS URLs that also appeared as script/fetch calls
+                # or browser-fetched JS files so the frontend can still show them.
+                for call in js_data.get("runtime_network", []) or []:
+                    u = call.get("url") if isinstance(call, dict) else str(call)
+                    if isinstance(u, str) and (u.endswith(".js") or ".js?" in u or ".js#" in u):
+                        runtime_js_urls.append(u)
+                for jf in js_data.get("js_files", []) or []:
+                    u = jf.get("url", "")
+                    if jf.get("source") == "playwright" and u:
+                        runtime_js_urls.append(u)
+            runtime_js_urls = sorted(dict.fromkeys(runtime_js_urls))
             co_data["js_data"] = {
                 "js_files":          js_data.get("js_files", []),
                 "total_endpoints":   js_data.get("total_endpoints") or js_data.get("endpoints_found", 0),
@@ -3493,6 +3582,7 @@ class ReconRunner:
                 # Playwright runtime network capture
                 "runtime_network":     js_data.get("runtime_network", []),
                 "runtime_network_map": js_data.get("runtime_network_map", {}),
+                "runtime_js_urls":      runtime_js_urls,
                 "runtime_js_count":    js_data.get("runtime_js_count", 0),
                 "scanned_at":          js_data.get("scanned_at", ""),
             }
@@ -3565,25 +3655,93 @@ class ReconRunner:
             co_data["api_exposure"] = api_data["exposed"]
             log(f"  ↳ API exposure: {len(api_data['exposed'])} endpoints persistidos")
 
+        # Browser crawl — Playwright crawler URLs, XHR/fetch and forms
+        crawl_data = _result("browser_crawl")
+        if crawl_data and (
+            crawl_data.get("urls")
+            or crawl_data.get("api_endpoints")
+            or crawl_data.get("results")
+            or crawl_data.get("form_count")
+        ):
+            co_data["browser_crawl_data"] = {
+                "hosts_crawled": crawl_data.get("hosts_crawled", 0),
+                "hosts_targeted": crawl_data.get("hosts_targeted", 0),
+                "results": crawl_data.get("results", []),
+                "urls": crawl_data.get("urls", []),
+                "url_count": crawl_data.get("url_count", len(crawl_data.get("urls", []) or [])),
+                "api_endpoints": crawl_data.get("api_endpoints", []),
+                "api_endpoint_count": crawl_data.get("api_endpoint_count", len(crawl_data.get("api_endpoints", []) or [])),
+                "forms": crawl_data.get("forms", []),
+                "form_count": crawl_data.get("form_count", 0),
+                "subdomains": crawl_data.get("subdomains", []),
+                "scanned_at": crawl_data.get("scanned_at", ""),
+            }
+            log(
+                f"  ↳ Browser Crawl: {crawl_data.get('url_count', 0)} URLs, "
+                f"{crawl_data.get('api_endpoint_count', 0)} XHR/fetch, "
+                f"{crawl_data.get('form_count', 0)} forms"
+            )
+
         # Browser recon — deep JS analysis attached to hosts
         br_data = _result("browser_recon")
-        if br_data and not br_data.get("error") and br_data.get("url"):
-            hostname = __import__('urllib').parse.urlparse(br_data.get("url", "")).hostname or ""
-            if hostname:
+        if br_data and not br_data.get("error"):
+            browser_results = br_data.get("results") if isinstance(br_data.get("results"), list) else []
+            if browser_results or br_data.get("hosts_scanned"):
+                co_data["browser_recon_data"] = {
+                    "hosts_scanned": br_data.get("hosts_scanned", len(browser_results)),
+                    "total_api_endpoints": br_data.get("total_api_endpoints", 0),
+                    "total_secrets": br_data.get("total_secrets", 0),
+                    "total_cookies": br_data.get("total_cookies", 0),
+                    "insecure_cookies": br_data.get("insecure_cookies", 0),
+                    "technologies": br_data.get("technologies", []),
+                    "results": browser_results,
+                    "scanned_at": br_data.get("scanned_at", ""),
+                }
+                by_host = {}
+                for item in browser_results:
+                    try:
+                        host = __import__('urllib').parse.urlparse(item.get("url", "")).hostname or ""
+                    except Exception:
+                        host = ""
+                    if host:
+                        by_host[host.lower()] = item
+                attached = 0
                 for h in co_data.get("hosts", []):
-                    if h.get("host") == hostname:
-                        h["browser_recon"] = {
-                            "js_analysis": br_data.get("js_analysis", {}),
-                            "technologies": br_data.get("technologies", []),
-                            "api_endpoints": br_data.get("api_endpoints", []),
-                            "secrets_found": br_data.get("secrets_found", []),
-                            "source_maps": br_data.get("source_maps", []),
-                            "third_party_services": br_data.get("third_party_services", []),
-                            "observations": br_data.get("observations", []),
-                            "screenshot": br_data.get("screenshot", ""),
-                        }
-                        log(f"  ↳ Browser Recon: JS deep analysis persistido para {hostname}")
-                        break
+                    item = by_host.get((h.get("host") or "").lower())
+                    if not item:
+                        continue
+                    h["browser_recon"] = {
+                        "js_analysis": item.get("js_analysis", {}),
+                        "technologies": item.get("technologies", []),
+                        "api_endpoints": item.get("api_endpoints", []),
+                        "secrets_found": item.get("secrets_found", []),
+                        "source_maps": item.get("source_maps", []),
+                        "third_party_services": item.get("third_party_services", []),
+                        "observations": item.get("observations", []),
+                        "screenshot": item.get("screenshot", ""),
+                        "cookies": item.get("cookies", []),
+                        "status": item.get("status"),
+                        "title": item.get("title", ""),
+                    }
+                    attached += 1
+                log(f"  ↳ Browser Recon: {len(browser_results)} páginas persistidas, {attached} hosts enriquecidos")
+            elif br_data.get("url"):
+                hostname = __import__('urllib').parse.urlparse(br_data.get("url", "")).hostname or ""
+                if hostname:
+                    for h in co_data.get("hosts", []):
+                        if h.get("host") == hostname:
+                            h["browser_recon"] = {
+                                "js_analysis": br_data.get("js_analysis", {}),
+                                "technologies": br_data.get("technologies", []),
+                                "api_endpoints": br_data.get("api_endpoints", []),
+                                "secrets_found": br_data.get("secrets_found", []),
+                                "source_maps": br_data.get("source_maps", []),
+                                "third_party_services": br_data.get("third_party_services", []),
+                                "observations": br_data.get("observations", []),
+                                "screenshot": br_data.get("screenshot", ""),
+                            }
+                            log(f"  ↳ Browser Recon: JS deep analysis persistido para {hostname}")
+                            break
 
         # Leaks (github)
         leaks_data = _result("leaks")
@@ -3591,20 +3749,29 @@ class ReconRunner:
             co_data["leaks_data"] = leaks_data
             log(f"  ↳ Leaks: {leaks_data.get('total_findings', 0)} findings persistidos")
 
-        # Screenshots metadata — gowitness uses "count", screenshot module uses "total"
-        shots_data = _result("gowitness") or _result("screenshots")
-        shots_count = shots_data.get("count") or shots_data.get("total") or 0
+        # Screenshots metadata — gowitness uses "count", screenshot module uses "total".
+        # Keep the largest available count because browser/screenshot/gowitness can
+        # write to the same directory with different module-level totals.
+        gw_data = _result("gowitness")
+        screenshot_data = _result("screenshot") or _result("screenshots")
+        shots_data = gw_data if gw_data.get("screenshots") else (screenshot_data or gw_data)
+        shots_dir = self.base / "scans" / cid / "screenshots"
+        disk_count = 0
+        if shots_dir.exists():
+            disk_count = len([f for f in shots_dir.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg")])
+        shots_count = max(
+            int(gw_data.get("count") or gw_data.get("total") or 0),
+            int(screenshot_data.get("count") or screenshot_data.get("total") or 0),
+            disk_count,
+        )
         if shots_count:
             co_data["screenshots_count"] = shots_count
-        else:
-            shots_dir = self.base / "scans" / cid / "screenshots"
-            if shots_dir.exists():
-                disk_count = len([f for f in shots_dir.iterdir() if f.suffix.lower() in (".png", ".jpg", ".jpeg")])
-                if disk_count:
-                    co_data["screenshots_count"] = disk_count
 
         # Link gowitness screenshots to host objects
-        gw_screenshots = shots_data.get("screenshots", [])
+        gw_screenshots = []
+        for _sd in (gw_data, screenshot_data):
+            if isinstance(_sd.get("screenshots"), list):
+                gw_screenshots.extend(_sd.get("screenshots", []))
         if gw_screenshots:
             ss_map = {s.get("host","").lower(): s.get("screenshot","") for s in gw_screenshots if s.get("host")}
             for h in co_data.get("hosts", []):
@@ -3628,6 +3795,9 @@ class ReconRunner:
                     if name.startswith("browser_"):
                         host = name[8:].replace("___", "://").replace("_", ".")
                         host = host.split("://", 1)[-1] if "://" in host else host
+                    elif name.startswith(("http---", "https---")):
+                        host = re.sub(r"^https?---", "", name, flags=re.I)
+                        host = re.sub(r"-\d+$", "", host)
                     else:
                         host = name.replace("-", ".")
                     host = host.lower().strip(".")
@@ -4553,6 +4723,7 @@ class ReconRunner:
             "findings_info":     _count_sev("info"),
             "open_ports":        len(co_data.get("port_scan", {}).get("results", [])),
             "waf_protected":     sum(co_data.get("waf_coverage", {}).values()),
+            "screenshots":       int(co_data.get("screenshots_count") or 0),
         })
         log(f"  ↳ Stats: {co_data['stats']['findings_critical']}c/{co_data['stats']['findings_high']}h/{co_data['stats']['findings_medium']}m findings, {co_data['stats']['open_ports']} ports")
 
@@ -4651,17 +4822,6 @@ class ReconRunner:
         total_phases = len(PIPELINE_PHASES)
         cf_detected  = False
 
-        # Light mode (bulk per-domain queue): run only passive discovery + httpx
-        # liveness/tech (the 'passive' phase has merge_hosts=True). Heavy active
-        # phases (crawl, portscan, services, vulnscan, nuclei, browser) are
-        # deferred so 35k domains can be swept in viable time. Opt out with
-        # options.light=False, or restrict explicitly with options.phases=[...].
-        light_phases = None
-        if options.get("light"):
-            light_phases = {"passive"}
-        elif options.get("phases"):
-            light_phases = {str(p) for p in (options.get("phases") or [])}
-
         # Load any previously completed modules so we can resume after a restart
         self._load_checkpoints(cid)
         current_hosts = self._filter_hosts_for_options(self._load_hosts(cid), co, options)
@@ -4669,7 +4829,7 @@ class ReconRunner:
         current_scope_hash = self._scan_scope_hash(co)
         previous_scope_hash = previous_state.get("scope_hash") or ""
 
-        scoped_queue_run = bool(options.get("queue_domain") or options.get("light"))
+        scoped_queue_run = bool(options.get("queue_domain"))
         if previous_scope_hash and previous_scope_hash != current_scope_hash and not scoped_queue_run:
             self._invalidate_checkpoint_modules(
                 cid,
@@ -4697,13 +4857,10 @@ class ReconRunner:
         try:
             from core.checkpoints import run_checkpoint_scan as _run_checkpoint_scan
             # Smart-scan checkpoint fingerprints every known host (httpx GET) to
-            # decide which active phases need a re-scan. _load_hosts(cid) returns
-            # the WHOLE company's hosts, so in light/queue mode - where each job
-            # is a single-domain passive discovery sweep - this would re-fingerprint
-            # thousands of hosts on EVERY one of the 35k jobs, hanging the queue
-            # for minutes/hours each. It's only meaningful for the full active
-            # pipeline, so skip it entirely for light/scoped runs.
-            if options.get("light") or options.get("skip_smart_scan"):
+            # decide which browser/check phases need a re-scan. Large bug-bounty
+            # queues already run per selected domain, so the smart diff is skipped
+            # by default unless an operator explicitly enables it.
+            if options.get("skip_smart_scan"):
                 host_targets = []
             else:
                 host_targets = [h.get("host") for h in current_hosts if isinstance(h, dict) and h.get("host")]
@@ -4727,8 +4884,8 @@ class ReconRunner:
                     self._invalidate_checkpoint_modules(
                         cid,
                         [
-                            "validation", "profiling", "js_tech", "js_analysis", "crawl",
-                            "enum_active", "portscan", "services", "vulnscan", "nuclei",
+                            "validation", "fingerprint", "js_discovery", "api_mapping",
+                            "browser", "bug_checks", "ports_services", "nuclei",
                         ],
                         reason=checkpoint_result.get("summary", "host or app fingerprint changed"),
                     )
@@ -4935,13 +5092,6 @@ class ReconRunner:
             phase_label = phase["label"]
             modules     = phase["modules"]
 
-            # ── Light mode: skip phases outside the allowed set ───────────────
-            if light_phases is not None and phase_id not in light_phases:
-                continue
-            # ── Light mode: within passive, run only the fast discovery set ───
-            if light_phases is not None and phase_id == "passive":
-                modules = [m for m in modules if m in _LIGHT_PASSIVE_MODULES]
-
             # ── Gate: skip phase if condition not met ─────────────────────────
             gate = phase.get("gate")
             phase_hosts = self._filter_hosts_for_options(self._load_hosts(cid), co, options)
@@ -5066,7 +5216,7 @@ class ReconRunner:
             # between persist thread and pipeline gate checks
 
             # ── Cloudflare detection & mode adjustment (após Fase 4 profiling) ──
-            if phase_id == "profiling" and not cf_detected:
+            if phase_id == "fingerprint" and not cf_detected:
                 cf_coverage = self._detect_cloudflare_coverage(cid)
                 if cf_coverage >= 80:
                     cf_detected = True

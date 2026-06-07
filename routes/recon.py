@@ -34,8 +34,8 @@ _SCAN_DATA_KEYS = (
 )
 
 _SSE_MAX_RUNTIME = 4 * 3600  # 4 hours max SSE stream
-_PIPELINE_PROFILES = {"passive_bulk", "active_light", "active_heavy", "full"}
-_ACTIVE_PROFILES = {"active_light", "active_heavy"}
+_PIPELINE_PROFILES = {"bug_bounty"}
+_FINAL_JOB_STATUSES = {"done", "error", "cancelled", "stopped"}
 
 def create_recon_blueprint(
     *,
@@ -103,27 +103,14 @@ def create_recon_blueprint(
     @require_auth
     def api_pipeline_profiles():
         return jsonify({
-            "passive_bulk": {
-                "description": "Mass passive discovery only. Safe for large queues.",
-                "active": False,
-                "phases": ["passive"],
-            },
-            "active_light": {
-                "description": "Low-risk active web fingerprinting/crawl on selected live targets.",
+            "bug_bounty": {
+                "description": "Bug bounty pipeline: discovery, validation, prioritization, browser evidence, checks and reporting.",
                 "active": True,
-                "phases": ["profiling", "js_tech", "js_analysis", "crawl", "enum_active"],
-                "max_domains_default": int(os.environ.get("ASM_ACTIVE_QUEUE_LIMIT", "10") or 10),
-            },
-            "active_heavy": {
-                "description": "Heavy active checks such as portscan/services/vuln/nuclei. Tiny batches only.",
-                "active": True,
-                "phases": ["portscan", "services", "vulnscan", "nuclei"],
-                "max_domains_default": int(os.environ.get("ASM_ACTIVE_QUEUE_LIMIT", "10") or 10),
-            },
-            "full": {
-                "description": "Full pipeline. Use manually on a very small explicit scope.",
-                "active": True,
-                "phases": "all",
+                "phases": [
+                    "discovery", "validation", "intel", "cleanup", "fingerprint",
+                    "js_discovery", "api_mapping", "browser", "bug_checks",
+                    "ports_services", "nuclei",
+                ],
             },
         })
 
@@ -189,7 +176,7 @@ def create_recon_blueprint(
         # With ASM_JOB_WORKERS=1, domains process one at a time serially.
         # Default: auto-enable when >1 domain (avoids memory explosion from
         # parallel fan-out across hundreds/thousands of domains).
-        profile = str(body.get("profile") or body.get("pipeline_profile") or "").strip().lower()
+        profile = str(body.get("profile") or body.get("pipeline_profile") or "bug_bounty").strip().lower()
         if queue_domains is None:
             queue_domains = len(domains) > 1
         else:
@@ -208,27 +195,14 @@ def create_recon_blueprint(
             "whoisxml_key":  _opt("whoisxml_key", "WHOISXML_KEY"),
             "mode": body.get("mode", "balanced"),
             "queue_domains": queue_domains,
+            "profile": "bug_bounty",
+            "pipeline_profile": "bug_bounty",
+            "active": True,
         }
-        if profile:
-            if profile not in _PIPELINE_PROFILES:
-                return jsonify({"error": f"Invalid profile: {profile}", "profiles": sorted(_PIPELINE_PROFILES)}), 400
-            options["profile"] = profile
-            # Active profiles are intentionally small-batch. They touch targets.
-            max_active_queue = int(os.environ.get("ASM_ACTIVE_QUEUE_LIMIT", "10") or 10)
-            if profile in _ACTIVE_PROFILES and queue_domains and len(domains) > max_active_queue:
-                return jsonify({
-                    "error": "Active profiles require a small explicit batch",
-                    "profile": profile,
-                    "domain_count": len(domains),
-                    "max_domains": max_active_queue,
-                }), 400
+        if profile not in _PIPELINE_PROFILES:
+            return jsonify({"error": f"Invalid profile: {profile}", "profiles": sorted(_PIPELINE_PROFILES)}), 400
         if domains:
             options["domains"] = domains
-        if "light" in body:
-            options["light"] = bool(body.get("light"))
-        if isinstance(body.get("phases"), list):
-            options["phases"] = [str(item) for item in body.get("phases") if str(item).strip()]
-
         pipeline_state[cid] = {
             "status": "queued" if job_scheduler else "running",
             "phase_idx": 0,
@@ -307,9 +281,9 @@ def create_recon_blueprint(
         state = pipeline_state.get(cid) if pipeline_state else None
         if not state and load_pipeline_state:
             state = load_pipeline_state(cid)
-        if not state or state.get("status") != "done":
+        if not state or state.get("status") not in {"done", "done_with_issues"}:
             return jsonify({
-                "error": "Playwright Recon requires a completed full pipeline scan first",
+                "error": "Playwright Recon requires a completed bug bounty pipeline scan first",
                 "pipeline_status": (state or {}).get("status", "not_run"),
             }), 409
 
@@ -342,21 +316,25 @@ def create_recon_blueprint(
     @bp.route("/api/recon/<cid>/pipeline", methods=["DELETE"])
     @require_auth
     def api_stop_pipeline(cid: str):
-        state = pipeline_state.get(cid, {})
-        if state.get("status") in {"queued", "running"}:
-            state["status"] = "stopped"
-            state["finished_at"] = datetime.now().isoformat(timespec="seconds")
-            state.setdefault("log", []).append({
-                "ts": datetime.now().isoformat(timespec="seconds"),
-                "msg": "⏹ Pipeline stopped by user"
-            })
+        state = pipeline_state.get(cid)
+        if state is None:
+            state = {}
+            pipeline_state[cid] = state
+        state["status"] = "stopped"
+        state["finished_at"] = datetime.now().isoformat(timespec="seconds")
+        state.setdefault("log", []).append({
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "msg": "⏹ Pipeline stopped by user"
+        })
         if db is not None:
             try:
                 cancelled = db.cancel_pending_jobs(company_id=cid, job_type="pipeline")
-                if cancelled:
+                pw_cancelled = db.cancel_pending_jobs(company_id=cid, job_type="playwright_recon")
+                total = (cancelled or 0) + (pw_cancelled or 0)
+                if total:
                     state.setdefault("log", []).append({
                         "ts": datetime.now().isoformat(timespec="seconds"),
-                        "msg": f"Cancelled {cancelled} pending queued jobs",
+                        "msg": f"Cancelled {total} pending queued jobs (pipeline + playwright)",
                     })
             except Exception:
                 pass
@@ -374,7 +352,7 @@ def create_recon_blueprint(
         state = pipeline_state.get(cid)
         if not state and load_pipeline_state:
             state = load_pipeline_state(cid)
-        if not state:
+        if not state or not isinstance(state, dict):
             return jsonify({"status": "not_run"})
 
         state_not_done = {
@@ -409,7 +387,7 @@ def create_recon_blueprint(
             })
 
         return jsonify({
-            "status": state["status"],
+            "status": state.get("status", "running"),
             "job_id": state.get("job_id", ""),
             "queue_mode": state.get("queue_mode", ""),
             "queue_total": state.get("queue_total", 0),
@@ -486,6 +464,35 @@ def create_recon_blueprint(
             rows = [r for r in rows if r.get("company_id") in allowed]
         return jsonify(rows)
 
+    @bp.route("/api/jobs", methods=["DELETE"])
+    @require_auth
+    def api_delete_jobs():
+        if not db:
+            return jsonify({"error": "job queue not available"}), 404
+        if not hasattr(db, "delete_jobs"):
+            return jsonify({"error": "job delete not available"}), 503
+        sess = getattr(g, "session", {}) or {}
+        scope = sess.get("scoped_companies")
+        is_super = sess.get("role") == "super_admin"
+        company_id = request.args.get("company_id", "")
+        status = request.args.get("status", "")
+        job_type = request.args.get("job_type", "")
+        target = request.args.get("target", "")
+        if status not in _FINAL_JOB_STATUSES:
+            return jsonify({
+                "error": "Bulk delete requires a final status",
+                "allowed_statuses": sorted(_FINAL_JOB_STATUSES),
+            }), 400
+        if company_id and not is_super and scope is not None and "*" not in scope and company_id not in scope:
+            return jsonify({"error": "Forbidden — company not in scope"}), 403
+        if not company_id and not is_super and scope is not None and "*" not in scope:
+            total = 0
+            for cid in (scope or []):
+                total += db.delete_jobs(company_id=cid, status=status, job_type=job_type, target=target)
+            return jsonify({"ok": True, "deleted": total})
+        deleted = db.delete_jobs(company_id=company_id, status=status, job_type=job_type, target=target)
+        return jsonify({"ok": True, "deleted": deleted})
+
     @bp.route("/api/jobs/<job_id>", methods=["GET"])
     @require_auth
     def api_job_detail(job_id: str):
@@ -514,9 +521,13 @@ def create_recon_blueprint(
         if sess.get("role") != "super_admin" and scope is not None:
             if not scope or ("*" not in scope and job.get("company_id") not in scope):
                 return jsonify({"error": "Forbidden — company not in scope"}), 403
+        if job.get("status") in _FINAL_JOB_STATUSES and hasattr(db, "delete_job"):
+            if db.delete_job(job_id):
+                return jsonify({"ok": True, "job_id": job_id, "deleted": True})
+            return jsonify({"error": "Job not found"}), 404
         if db.cancel_job(job_id, reason="cancelled by user"):
             return jsonify({"ok": True, "job_id": job_id})
-        return jsonify({"error": "Only pending jobs can be cancelled"}), 409
+        return jsonify({"error": "Only pending jobs can be cancelled; only final jobs can be deleted"}), 409
 
     @bp.route("/api/jobs/<job_id>/artifact/<kind>", methods=["GET"])
     @require_auth

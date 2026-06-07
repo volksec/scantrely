@@ -75,8 +75,7 @@ def create_core_blueprint(
     @bp.route("/api/presets", methods=["GET"])
     @require_auth
     def api_presets():
-        # Single unified pipeline profile — BBOT removed
-        return jsonify([{"id": "deep", "label": "Pipeline Completo"}])
+        return jsonify([{"id": "bug_bounty", "label": "Bug Bounty"}])
 
     @bp.route("/api/auth/login", methods=["POST"])
     def api_login():

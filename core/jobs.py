@@ -12,9 +12,6 @@ from datetime import datetime
 import uuid
 from typing import Callable
 
-from playwright_agent.asm_bridge import build_playwright_job_options
-
-
 _RECON_PROCESS_NAMES = {
     "assetfinder", "subfinder", "httpx", "httpx-toolkit", "nuclei", "naabu",
     "amass", "masscan", "ffuf", "gowitness", "wpscan", "dig", "whois",
@@ -129,11 +126,18 @@ class JobScheduler:
             existing = self.db.find_active_job(company_id=company_id, job_type="pipeline", target=target)
             if existing:
                 return {**existing, "deduped": True}
+        job_options = dict(options or {})
+        job_options["profile"] = "bug_bounty"
+        job_options["pipeline_profile"] = "bug_bounty"
+        job_options.pop("light", None)
+        job_options.pop("phases", None)
+        job_options.pop("pipeline_phases", None)
+        job_options["active"] = True
         job = self.db.create_job(
             job_type="pipeline",
             company_id=company_id,
             target=target or company_id,
-            options=options or {},
+            options=job_options,
             priority=priority,
             created_by=created_by,
         )
@@ -170,12 +174,12 @@ class JobScheduler:
             job_options["domains"] = [domain]
             job_options["queue_domain"] = domain
             job_options["queue_batch_index"] = idx
-            # Bulk per-domain sweep = DISCOVERY only for passive_bulk profile.
-            # Active profiles (full, active_light, active_heavy) must NOT be
-            # forced into light mode — they need all phases to run.
-            profile = str(job_options.get("profile") or "").lower()
-            if not profile or profile in ("passive_bulk",):
-                job_options.setdefault("light", True)
+            job_options["profile"] = "bug_bounty"
+            job_options["pipeline_profile"] = "bug_bounty"
+            job_options.pop("light", None)
+            job_options.pop("phases", None)
+            job_options.pop("pipeline_phases", None)
+            job_options["active"] = True
             payloads.append({
                 "job_type": "pipeline",
                 "company_id": company_id,
@@ -305,6 +309,12 @@ class JobScheduler:
             options.setdefault("job_id", job_id)
             options.setdefault("job_type", job_type)
             if job_type == "pipeline":
+                options["profile"] = "bug_bounty"
+                options["pipeline_profile"] = "bug_bounty"
+                options.pop("light", None)
+                options.pop("phases", None)
+                options.pop("pipeline_phases", None)
+                options["active"] = True
                 run_company = dict(company)
                 scoped_domains = [str(d).strip() for d in (options.get("domains") or []) if str(d).strip()]
                 if scoped_domains:
@@ -326,12 +336,17 @@ class JobScheduler:
                     self.db.finish_job(job_id, status="error", error=self._last_log(company_id))
                 else:
                     self.db.finish_job(job_id, status="done")
-                    if not self.db.find_active_job(company_id=company_id, job_type="pipeline"):
-                        self._maybe_enqueue_playwright(company_id, company, created_by=job.get("created_by") or "system")
+                    # The bug-bounty pipeline includes browser_crawl/browser_recon
+                    # in-band. Do not enqueue separate follow-up jobs.
                 return
             if job_type == "playwright_recon":
                 if not self.run_playwright_recon:
                     self.db.finish_job(job_id, status="error", error="Playwright runner not configured")
+                    return
+                # Skip if pipeline was stopped by user
+                state = self.pipeline_state.get(company_id, {})
+                if state.get("status") == "stopped":
+                    self.db.finish_job(job_id, status="cancelled")
                     return
                 self.run_playwright_recon(company_id, company, options)
                 self.db.finish_job(job_id, status="done")
@@ -352,43 +367,6 @@ class JobScheduler:
 
         base = Path(__file__).resolve().parent.parent / "data" / "playwright-jobs"
         return base / self._slugify(company_id) / job_id
-
-    def _maybe_enqueue_playwright(self, company_id: str, company: dict, *, created_by: str = "") -> None:
-        if not self.get_settings:
-            return
-        try:
-            settings = self.get_settings() or {}
-        except Exception:
-            settings = {}
-        if str(settings.get("playwright_auto_run", "true")).strip().lower() in {"0", "false", "no", "off"}:
-            return
-        if not company.get("domains"):
-            return
-        if self.db.find_active_job(company_id=company_id, job_type="playwright_recon"):
-            return
-        try:
-            options = build_playwright_job_options(company, settings=settings)
-        except Exception as exc:
-            state = self.pipeline_state.setdefault(company_id, {})
-            state.setdefault("log", []).append({
-                "ts": datetime.now().isoformat(timespec="seconds"),
-                "msg": f"Auto Playwright skipped: {exc}",
-            })
-            if self.save_pipeline_state:
-                self.save_pipeline_state(company_id)
-            return
-        job = self.enqueue_playwright_recon(
-            company_id,
-            options=options,
-            created_by=created_by or "system",
-        )
-        state = self.pipeline_state.setdefault(company_id, {})
-        state.setdefault("log", []).append({
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "msg": f"Auto Playwright queued as job {job['id']}",
-        })
-        if self.save_pipeline_state:
-            self.save_pipeline_state(company_id)
 
     def _slugify(self, value: str) -> str:
         import re

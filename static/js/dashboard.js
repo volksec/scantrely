@@ -143,7 +143,7 @@ const DEMO_DATA = {
 };
 
 // ════════════════════════════════════════════════════════════════════════
-//  LEGACY COMPAT — maps old globals to new ASM namespace
+//  GLOBAL COMPAT — maps dashboard globals to the ASM namespace
 //  (Defined in js/asm.js — available when loaded via dashboard.html)
 // ════════════════════════════════════════════════════════════════════════
 const SERVER_MODE = window.SERVER_MODE; // from asm.js
@@ -293,10 +293,11 @@ function _companyScopeLabel(co) {
 function _companyQueueCounts(co) {
   const scopeTotal = _companyScopeCount(co);
   const summary = _companyQueueSummaryCache.find(s => String(s.company_id || "") === String(co?.id || ""));
-  if (!summary) return { done: 0, queued: scopeTotal };
+  if (!summary) return { complete: 0, finalized: 0, queued: scopeTotal };
   const counts = summary.counts || {};
   return {
-    done: Number(counts.done || 0),
+    complete: Number(counts.complete || 0),
+    finalized: Number(counts.done || 0),
     queued: Number(counts.pending || 0) + Number(counts.running || 0),
   };
 }
@@ -312,12 +313,13 @@ function _companyQueueProgress(co) {
   const stopped = Number(c.stopped || 0);
   const error = Number(c.error || 0);
   const cancelled = Number(c.cancelled || 0);
+  const complete = Number(c.complete || 0);
   const active = running + pending;
   if (!total) return null;
   const completed = done + stopped + error + cancelled;
   const rawPct = Math.min(100, ((completed + (running ? 0.5 : 0)) / total) * 100);
   const pct = active ? Math.max(rawPct, 2) : rawPct;
-  return {total, done, running, pending, stopped, error, cancelled, active, pct};
+  return {total, complete, done, running, pending, stopped, error, cancelled, active, pct};
 }
 
 function _ensureCompanyQueueSummary() {
@@ -780,6 +782,7 @@ function renderCompanyView(co) {
     fetch(`/api/screenshots/${co.id}`, {headers:_authHeaders()}).then(r=>r.ok?r.json():[]).then(d=>{
       const el = document.getElementById("tc-screenshots");
       if(el && d.length) el.textContent = d.length;
+      _applyScreenshotInventory(co, d);
     }).catch(()=>{});
     fetch(`/api/data/${co.id}/subhistory`, {headers: _authHeaders()}).then(r=>r.json()).then(d=>{
       const el = document.getElementById("tc-subhistory");
@@ -809,6 +812,41 @@ function renderCompanyView(co) {
   syncCompanyTabsAccessibility(TAB_TO_GROUP[state.tab] || state.tab || "overview");
   updateGroupCounts();
   initGroupCountObserver();
+}
+
+function _applyScreenshotInventory(co, shots) {
+  if (!co || !Array.isArray(shots) || !shots.length) return;
+  const map = new Map();
+  shots.forEach(item => {
+    const url = String(item.url || "").trim();
+    let host = "";
+    try { host = new URL(url).hostname || ""; } catch(e) {}
+    if (!host && item.filename) host = _screenshotFilenameHost(item.filename);
+    host = _normalizeScopeDomain(host);
+    if (!host || map.has(host)) return;
+    map.set(host, `screenshots/${co.id}/${item.filename}`);
+  });
+  if (!map.size) return;
+  co._screenshotsByHost = map;
+  (co.hosts || []).forEach(h => {
+    const host = _normalizeScopeDomain(h.host || "");
+    if (host && !h.screenshot && map.has(host)) h.screenshot = map.get(host);
+  });
+  if (state.currentId === co.id && (state.tab === "subdomains" || state.activeGroup === "hosts")) {
+    renderSubdomainsTab(co);
+  }
+}
+
+function _screenshotFilenameHost(filename) {
+  let name = String(filename || "").replace(/\.(png|jpe?g|webp)$/i, "");
+  if (name.startsWith("browser_")) {
+    name = name.slice(8).replace("___", "://");
+    name = name.includes("://") ? name.split("://", 2)[1] : name;
+    return name.replace(/_/g, ".");
+  }
+  name = name.replace(/^(https?|http)---/i, "");
+  name = name.replace(/-\d+$/i, "");
+  return name;
 }
 
 async function selectCompany(id) {
@@ -1235,7 +1273,7 @@ function renderAllCompanies() {
       ? "Processo da fila"
       : "Trend";
     const progressText = queueProgress && queueProgress.active
-      ? `${queueProgress.done.toLocaleString()} concluidos · ${queueProgress.running.toLocaleString()} rodando · ${queueProgress.pending.toLocaleString()} na fila`
+      ? `${queueProgress.complete.toLocaleString()} concluidos · ${queueProgress.done.toLocaleString()} finalizados · ${queueProgress.running.toLocaleString()} rodando · ${queueProgress.pending.toLocaleString()} na fila`
       : trendText;
     const progressPct = queueProgress && queueProgress.active ? queueProgress.pct : trendScore;
     const progressCls = queueProgress && queueProgress.active ? " running" : "";
@@ -1298,7 +1336,7 @@ function renderAllCompanies() {
         <div class="cc-empty-title">Sem scan concluido ainda</div>
         <div class="cc-empty-stats">
           <div class="cc-empty-stat done">
-            <b>${queueCounts.done.toLocaleString()}</b>
+            <b>${queueCounts.complete.toLocaleString()}</b>
             <span>dominios concluidos</span>
           </div>
           <div class="cc-empty-stat queued">
@@ -2456,7 +2494,7 @@ function _buildSubdomainInventory(co, rows = []) {
       cert_info: item.cert_info || null,
       technologies: Array.isArray(item.technologies) ? item.technologies.slice() : [],
       title: item.title || "",
-      screenshot: item.screenshot || "",
+      screenshot: item.screenshot || (co._screenshotsByHost && co._screenshotsByHost.get(host)) || "",
       risk: item.risk || item.risk_level || item.severity || "",
       sources: [],
     };
@@ -2486,6 +2524,9 @@ function _buildSubdomainInventory(co, rows = []) {
     if (!existing.cloud_provider && item.cloud_provider) existing.cloud_provider = item.cloud_provider;
     if (!existing.cert_info && item.cert_info) existing.cert_info = item.cert_info;
     if (!existing.screenshot && item.screenshot) existing.screenshot = item.screenshot;
+    if (!existing.screenshot && co._screenshotsByHost && co._screenshotsByHost.has(host)) {
+      existing.screenshot = co._screenshotsByHost.get(host);
+    }
     if (source && !existing.sources.includes(source)) existing.sources.push(source);
     merged.set(host, existing);
   };
@@ -2571,9 +2612,17 @@ function _hostOpenPorts(h) {
   return [...byPort.values()].sort((a, b) => Number(a.port) - Number(b.port));
 }
 
-function _fmtHostPorts(h) {
+function _assetPendingCell(label = "Running") {
+  return `<span class="ai-pending" title="Coleta em andamento">${esc(label)}</span>`;
+}
+
+function _isAssetCollectionRunning() {
+  return !!(state.currentId && typeof _isPipelineActive === "function" && _isPipelineActive(state.currentId));
+}
+
+function _fmtHostPorts(h, pending = false) {
   const ports = _hostOpenPorts(h);
-  if (!ports.length) return `<span class="ai-dash">—</span>`;
+  if (!ports.length) return pending ? _assetPendingCell() : `<span class="ai-dash">—</span>`;
   const shown = ports.slice(0, 4).map(p => {
     const label = p.service ? `${p.port}:${p.service}` : p.port;
     const risky = _isHighRiskPort(p.port, p.service);
@@ -3072,6 +3121,7 @@ function _subRenderTable(filtered){
     pn+=`<button class="pb${i===_sub_page?" active":""}" onclick="_sub_page=${i};_subRenderTable(_subFiltered())">${i}</button>`;
   const pne=document.getElementById("sub-pnums"); if(pne) pne.innerHTML=pn;
   const tb=document.getElementById("sub-tbody"); if(!tb) return;
+  const collectionRunning = _isAssetCollectionRunning();
   tb.innerHTML = pg.map(h => {
     const scheme = (h.status_code || (h.ports||[]).includes('443') || !(h.ports||[]).includes('80')) ? 'https' : 'http';
     const url   = `${scheme}://${h.host}/`;
@@ -3079,7 +3129,11 @@ function _subRenderTable(filtered){
     const scCls = sc ? (sc<300?'s2':sc<400?'s3':sc<500?'s4':'s5') : 'na';
     const scHtml= `<span class="ai-status ${scCls}">${sc}</span>`;
     const techCell = _hostTechCell(h);
-    const title = h.title ? esc(h.title) : '<span class="ai-dash">—</span>';
+    const title = h.title ? esc(h.title) : (collectionRunning ? _assetPendingCell() : '<span class="ai-dash">—</span>');
+    const ipCell = h.ip ? esc(h.ip) : (collectionRunning ? _assetPendingCell() : '<span class="ai-dash">—</span>');
+    const shotCell = h.screenshot
+      ? `<img src="${esc('/' + h.screenshot)}" style="width:42px;height:26px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer;vertical-align:middle" onerror="this.style.display='none'" onmouseenter="ssPopoverShow(event,${JSON.stringify('/' + h.screenshot).replace(/"/g,'&quot;')},${JSON.stringify(h.host || '').replace(/"/g,'&quot;')})" onmouseleave="ssPopoverHide()" onclick="event.stopPropagation()">`
+      : (collectionRunning ? _assetPendingCell() : '<span class="ai-dash">—</span>');
     return `<tr class="ai-row" onclick="openHostDrawer('${escAttr(h.host)}')">
       <td class="ai-url-cell">
         <button class="ai-mini" title="Copy URL" onclick="event.stopPropagation();copyToClipboard('${escAttr(url)}')">⧉</button>
@@ -3087,11 +3141,11 @@ function _subRenderTable(filtered){
         <a class="ai-url" href="${escAttr(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(url)}</a>
       </td>
       <td>${scHtml}</td>
-      <td class="ai-cl">${_fmtHostPorts(h)}</td>
+      <td class="ai-cl">${_fmtHostPorts(h, collectionRunning)}</td>
       <td class="ai-title" title="${escAttr(h.title||'')}">${title}</td>
-      <td class="ai-ip">${esc(h.ip||'—')}</td>
+      <td class="ai-ip">${ipCell}</td>
       <td><div class="ai-tech-row">${techCell}</div></td>
-      <td class="ai-shot">${h.screenshot ? `<img src="${esc('/' + h.screenshot)}" style="width:42px;height:26px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer;vertical-align:middle" onerror="this.style.display='none'" onmouseenter="ssPopoverShow(event,${JSON.stringify('/' + h.screenshot).replace(/"/g,'&quot;')},${JSON.stringify(h.host || '').replace(/"/g,'&quot;')})" onmouseleave="ssPopoverHide()" onclick="event.stopPropagation()">` : '—'}</td>
+      <td class="ai-shot">${shotCell}</td>
       <td class="ai-actions"><button class="ai-eye" title="View details" onclick="event.stopPropagation();openHostDrawer('${escAttr(h.host)}')">◉</button></td>
     </tr>`;
   }).join('');
@@ -3256,13 +3310,31 @@ function buildUnifiedEndpoints(co) {
   const allEndpoints = [];
   const allSecrets = [];
   const sources = [];
+  const addEndpoint = (rawUrl, method, source, meta = {}) => {
+    if (!rawUrl || typeof rawUrl !== 'string') return;
+    const cls = _classifyUrlMemo(rawUrl);
+    allEndpoints.push({
+      url: rawUrl,
+      method: String(method || 'GET').toUpperCase(),
+      host: meta.host || '',
+      path: meta.path || '',
+      source,
+      type: meta.type || cls.type,
+      severity: meta.severity || cls.severity,
+      status: meta.status ?? null,
+      jsFile: meta.jsFile || '',
+    });
+  };
 
   // Wayback
   if (co.wayback_data?.interesting) {
     co.wayback_data.interesting.forEach(u => {
       const rawUrl = typeof u === 'string' ? u : (u.url || '');
-      const cls = _classifyUrlMemo(rawUrl);
-      allEndpoints.push({ url: rawUrl, method: 'GET', host: typeof u === 'object' ? (u.host || '') : '', path: typeof u === 'object' ? (u.path || '') : '', source: 'wayback', type: cls.type, severity: cls.severity, status: typeof u === 'object' ? u.status : null });
+      addEndpoint(rawUrl, 'GET', 'wayback', {
+        host: typeof u === 'object' ? (u.host || '') : '',
+        path: typeof u === 'object' ? (u.path || '') : '',
+        status: typeof u === 'object' ? u.status : null,
+      });
     });
     sources.push({ name: 'Wayback', count: co.wayback_data.interesting_count || 0, key: 'wayback' });
   }
@@ -3271,10 +3343,41 @@ function buildUnifiedEndpoints(co) {
   if (co.urlfinder_data?.urls) {
     co.urlfinder_data.urls.forEach(u => {
       const rawUrl = typeof u === 'string' ? u : (u.url || u.path || '');
-      const cls = _classifyUrlMemo(rawUrl);
-      allEndpoints.push({ url: rawUrl, method: 'GET', host: typeof u === 'object' ? (u.host || '') : '', path: typeof u === 'object' ? (u.path || '') : '', source: 'urlfinder', type: cls.type, severity: cls.severity });
+      addEndpoint(rawUrl, 'GET', 'urlfinder', {
+        host: typeof u === 'object' ? (u.host || '') : '',
+        path: typeof u === 'object' ? (u.path || '') : '',
+      });
     });
     sources.push({ name: 'URLFinder', count: co.urlfinder_data.urls.length, key: 'urlfinder' });
+  }
+
+  // Playwright browser crawler URLs + XHR/fetch
+  if (co.browser_crawl_data) {
+    (co.browser_crawl_data.urls || []).forEach(u => {
+      addEndpoint(typeof u === 'string' ? u : (u.url || ''), 'GET', 'browser_crawl', {
+        type: 'Browser crawled URL',
+        host: typeof u === 'object' ? (u.host || '') : '',
+      });
+    });
+    (co.browser_crawl_data.api_endpoints || []).forEach(e => {
+      const rawUrl = typeof e === 'string' ? e : (e.url || '');
+      addEndpoint(rawUrl, typeof e === 'object' ? (e.method || 'GET') : 'GET', 'browser_crawl_xhr', {
+        type: 'Browser XHR/fetch',
+        severity: 'medium',
+      });
+    });
+    (co.browser_crawl_data.results || []).forEach(r => {
+      (r.urls || []).forEach(u => addEndpoint(u, 'GET', 'browser_crawl', {
+        type: 'Browser crawled URL',
+        host: r.host || '',
+      }));
+      (r.api_endpoints || []).forEach(e => addEndpoint(e.url || '', e.method || 'GET', 'browser_crawl_xhr', {
+        type: 'Browser XHR/fetch',
+        severity: 'medium',
+        host: r.host || '',
+      }));
+    });
+    sources.push({ name: 'Browser Crawl', count: (co.browser_crawl_data.url_count || 0) + (co.browser_crawl_data.api_endpoint_count || 0), key: 'browser_crawl' });
   }
 
   // JS Endpoints + Secrets
@@ -3284,14 +3387,41 @@ function buildUnifiedEndpoints(co) {
         const eUrl = typeof ep === 'string' ? ep : (ep.url || ep.endpoint || ep.path || '');
         if (!eUrl) return;
         const method = (typeof ep === 'object' ? (ep.method || 'GET') : 'GET').toUpperCase();
-        const cls = _classifyUrlMemo(eUrl);
-        allEndpoints.push({ url: eUrl, method, host: js.host || '', path: typeof ep === 'object' ? (ep.path || '') : '', source: 'js', type: cls.type, severity: typeof ep === 'object' ? (ep.severity || cls.severity) : cls.severity, jsFile: js.file || js.url || '' });
+        addEndpoint(eUrl, method, 'js', {
+          host: js.host || '',
+          path: typeof ep === 'object' ? (ep.path || '') : '',
+          severity: typeof ep === 'object' ? ep.severity : '',
+          jsFile: js.file || js.url || '',
+        });
       });
       (js.secrets || []).forEach(s => {
         allSecrets.push({ type: s.type || 'Unknown', value: s.secret || s.value || s, file: js.file || js.url || '', host: js.host || '', severity: s.severity || 'high' });
       });
     });
     sources.push({ name: 'JS Extraction', count: co.js_data.total_endpoints || 0, key: 'js' });
+  }
+
+  // Runtime network captured while Playwright rendered JS-heavy pages.
+  if (co.js_data?.runtime_network) {
+    co.js_data.runtime_network.forEach(e => {
+      const rawUrl = typeof e === 'string' ? e : (e.url || '');
+      addEndpoint(rawUrl, typeof e === 'object' ? (e.method || 'GET') : 'GET', 'playwright_runtime', {
+        type: typeof e === 'object' ? (e.type || 'Runtime network') : 'Runtime network',
+        severity: 'medium',
+      });
+    });
+    sources.push({ name: 'Playwright Runtime', count: co.js_data.runtime_network.length, key: 'playwright_runtime' });
+  }
+
+  // Runtime JS chunks/scripts captured by Playwright while rendering pages.
+  if (co.js_data?.runtime_js_urls) {
+    co.js_data.runtime_js_urls.forEach(u => {
+      addEndpoint(typeof u === 'string' ? u : (u.url || ''), 'GET', 'playwright_runtime_js', {
+        type: 'Runtime JS chunk',
+        severity: 'medium',
+      });
+    });
+    sources.push({ name: 'Runtime JS Chunks', count: co.js_data.runtime_js_urls.length, key: 'playwright_runtime_js' });
   }
 
   // API Panels
@@ -4491,7 +4621,7 @@ let activeScanId  = null;
 let scanEventSrc  = null;
 let scanLineCount = 0;
 let scanStartTime = null;
-let selectedProfile = "full";
+let selectedProfile = "bug_bounty";
 
 // ── Module ETA tracker ───────────────────────────────────────────────────────
 const MODULE_ETA_S = {
@@ -4525,22 +4655,18 @@ let _prevRunning  = new Set();
 
 // ── BBOT HUD ────────────────────────────────────────────────────────────
 const BBOT_HUD_PHASES = [
-  {id:"passive", label:"PASSIVE",  icon:"◉", color:"#00e5ff",
-   mods:["crt","certspotter","digitorus","anubisdb","hackertarget","rapiddns",
-         "sitedossier","sublist3r","bevigil","urlscan","otx","virustotal",
-         "fullhunt","shodan_dns","trickest","chaos","leakix","censys_dns",
-         "threatminer","dnscommonsrv"]},
-  {id:"github",  label:"GITHUB",   icon:"⌥", color:"#818cf8",
-   mods:["github_codesearch","github_org"]},
-  {id:"api",     label:"API INTEL",icon:"⚡", color:"#fbbf24",
-   mods:["hunterio","postman","postman_download","binaryedge","securitytrails"]},
-  {id:"cloud",   label:"CLOUD",    icon:"☁", color:"#fb923c",
-   mods:["bucket_amazon","bucket_firebase","bucket_google",
-         "bucket_microsoft","bucket_digitalocean"]},
-  {id:"vuln",    label:"VULN SCAN",icon:"⚠", color:"#f43f5e",
-   mods:["nuclei","badsecrets","baddns"]},
-  {id:"secrets", label:"SECRETS",  icon:"⬡", color:"#c084fc",
-   mods:["trufflehog","git"]},
+  {id:"discovery", label:"DISCOVERY", icon:"◉", color:"#00e5ff",
+   mods:["subfinder","assetfinder","certs","alienvault_otx","urlscan_io","rapiddns","hackertarget","github_subdomains","wayback","urlfinder"]},
+  {id:"validation", label:"VALIDATE", icon:"⌁", color:"#818cf8",
+   mods:["dns","dns_brute","leaks"]},
+  {id:"intel", label:"INTEL", icon:"⚡", color:"#fbbf24",
+   mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","phishing","dep_confusion"]},
+  {id:"web", label:"WEB/JS", icon:"⬡", color:"#4ade80",
+   mods:["headers","waf","wappalyzer","whatweb","vendor_fp","service_version","favicon_hunt","js","js_endpoints","js_secrets","api_discovery_extra","graphql"]},
+  {id:"browser", label:"BROWSER", icon:"▣", color:"#c084fc",
+   mods:["browser_crawl","browser_recon","screenshot","gowitness"]},
+  {id:"checks", label:"CHECKS", icon:"⚠", color:"#f43f5e",
+   mods:["takeover","subjack","cors_scan","open_redirect","host_header_injection","infra_exposure","cloud_enum","default_creds","dnssec","waf_bypass","tableau","github_repos","supply_chain","portscan","services","cms_scan","cve","api_panels"]},
 ];
 const _MOD_PHASE = {};
 BBOT_HUD_PHASES.forEach((p,i) => p.mods.forEach(m => (_MOD_PHASE[m] = i)));
@@ -4790,7 +4916,7 @@ async function enableSchedule(cid, enabled) {
     var r = await fetch('/api/schedule/' + cid, {
       method:'POST',
       headers: {'Content-Type':'application/json', ..._authHeaders()},
-      body: JSON.stringify({enabled: enabled, interval_hours: enabled ? parseInt(interval) : 24, profile: 'full'})
+      body: JSON.stringify({enabled: enabled, interval_hours: enabled ? parseInt(interval) : 24, profile: 'bug_bounty'})
     });
     if (r.ok) {
       alert('Schedule ' + (enabled ? 'enabled — every ' + interval + 'h' : 'disabled'));
@@ -4824,12 +4950,12 @@ async function toggleSchedule(cid) {
     var s = r.ok ? await r.json() : {};
     if (s && s.enabled) {
       if (!confirm('Schedule is active (every ' + (s.interval_hours||'?') + 'h). Disable it?')) return;
-      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:false, interval_hours:s.interval_hours||24, profile:'deep'})});
+      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:false, interval_hours:s.interval_hours||24, profile:'bug_bounty'})});
       btn.textContent = '⏱ Schedule Off'; btn.style.color = '';
     } else {
       var interval = prompt('Scan interval (hours):', '24');
       if (!interval) return;
-      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:true, interval_hours:parseInt(interval), profile:'deep'})});
+      await fetch('/api/schedule/' + cid, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({enabled:true, interval_hours:parseInt(interval), profile:'bug_bounty'})});
       btn.textContent = '⏱ ' + interval + 'h On'; btn.style.color = '#4ade80';
     }
   } catch(e) { console.error(e); }
@@ -5450,7 +5576,7 @@ function showPage(page) {
 //  JOB QUEUE
 // ════════════════════════════════════════════════════════════════════════
 function _jobStatusLabel(status) {
-  const labels = {pending:"Pendente", running:"Rodando", done:"Concluido", error:"Erro", cancelled:"Cancelado", stopped:"Parado"};
+  const labels = {pending:"Pendente", running:"Rodando", done:"Finalizado", error:"Erro", cancelled:"Cancelado", stopped:"Parado"};
   return labels[status] || status || "unknown";
 }
 
@@ -5676,7 +5802,7 @@ async function renderCompanyPlaywrightPanel(cid) {
       panel.innerHTML = `
         <div class="job-detail-card">
           <div class="job-detail-title">Playwright Recon</div>
-          <div class="job-detail-copy">${ready ? "No Playwright Recon jobs found for this company yet." : "Locked until the full pipeline scan finishes."}</div>
+          <div class="job-detail-copy">${ready ? "No Playwright Recon jobs found for this company yet." : "Locked until the bug bounty pipeline scan finishes."}</div>
         </div>
       `;
       return;
@@ -5774,7 +5900,7 @@ async function renderOperationTab(co) {
         <div class="empty-state">
           <div class="empty-state-icon">∅</div>
           <div class="empty-state-title">No Playwright run found</div>
-          <div class="empty-state-copy">Run the full scan first, then queue Playwright Recon to populate this view.</div>
+          <div class="empty-state-copy">Run the bug bounty pipeline first, then queue Playwright Recon to populate this view.</div>
         </div>`;
       return;
     }
@@ -6092,6 +6218,155 @@ window.ssPopoverHide = function() {
   if (_ssPopover) _ssPopover.classList.remove('show');
 };
 
+function _reconSevColor(sev) {
+  return ({critical:"#fb7185", high:"#fb923c", medium:"#fbbf24", low:"#4ade80", info:"#94a3b8"}[String(sev || "info").toLowerCase()] || "#94a3b8");
+}
+
+function _reconKpi(value, label, note, cls) {
+  return `<div class="recon-kpi ${cls || ""}">
+    <div class="recon-kpi-value">${esc(value ?? 0)}</div>
+    <div class="recon-kpi-label">${esc(label)}</div>
+    ${note ? `<div class="recon-kpi-note">${esc(note)}</div>` : ""}
+  </div>`;
+}
+
+function _reconModuleCard(item) {
+  const active = Number(item.count || 0) > 0 || item.status === "done";
+  return `<div class="recon-module ${active ? "done" : "idle"}">
+    <div class="recon-module-top">
+      <span class="recon-module-name">${esc(item.name)}</span>
+      <span class="recon-module-count">${esc(item.count ?? 0)}</span>
+    </div>
+    <div class="recon-module-desc">${esc(item.desc || "")}</div>
+  </div>`;
+}
+
+function _renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, session) {
+  co = co || {};
+  const hosts = Array.isArray(co.hosts) ? co.hosts : [];
+  const findings = Array.isArray(co.findings) ? co.findings : [];
+  const cves = Array.isArray(co.cve_findings) ? co.cve_findings : [];
+  const phishing = Array.isArray(co.phishing_data?.findings) ? co.phishing_data.findings : [];
+  const headerResults = Array.isArray(co.headers_data?.results) ? co.headers_data.results : [];
+  const browserData = co.browser_recon_data || {};
+  const browserCrawl = co.browser_crawl_data || {};
+  const runtimeNetwork = Array.isArray(co.js_data?.runtime_network) ? co.js_data.runtime_network : [];
+  const runtimeJsUrls = Array.isArray(co.js_data?.runtime_js_urls) ? co.js_data.runtime_js_urls : [];
+  const browserResults = Array.isArray(browserData.results) ? browserData.results : [];
+  const pwPages = Array.isArray(session?.pages) ? session.pages : [];
+  const pwEndpoints = Array.isArray(session?.endpoints) ? session.endpoints : [];
+  const pwTokens = Array.isArray(session?.tokens) ? session.tokens : [];
+  const techCount = co.tech_summary ? Object.keys(co.tech_summary).length : 0;
+  const endpointTotal = (staticEndpoints || []).length + pwEndpoints.length + Number(browserData.total_api_endpoints || 0);
+  const secretTotal = (staticSecrets || []).length + pwTokens.length + Number(browserData.total_secrets || 0);
+  const screenshotTotal = Array.isArray(shots) ? shots.length : Number(co.screenshots_count || 0);
+  const missingHeaders = headerResults.reduce((acc, r) => acc + (Array.isArray(r.findings) ? r.findings.filter(f => !f.present && f.severity !== "pass").length : 0), 0);
+  const cookieIssues = Number(co.headers_data?.cookie_issues || 0) + Number(browserData.insecure_cookies || 0);
+
+  const modules = [
+    {name:"Subdomains", count: hosts.length || (co.ct_subdomains || []).length, desc:"Escopo descoberto e normalizado"},
+    {name:"URLs", count: endpointTotal, desc:"Wayback, URLFinder, JS e browser"},
+    {name:"Screenshots", count: screenshotTotal, desc:"Evidencias visuais em disco/API"},
+    {name:"Headers", count: headerResults.length, desc:`${missingHeaders} gaps · ${cookieIssues} cookie issues`},
+    {name:"Browser", count: browserResults.length || pwPages.length, desc:`${browserData.insecure_cookies || 0} cookies inseguros`},
+    {name:"Browser Crawl", count: Number(browserCrawl.url_count || 0) + Number(browserCrawl.api_endpoint_count || 0), desc:`${browserCrawl.hosts_crawled || 0} hosts · ${browserCrawl.form_count || 0} forms`},
+    {name:"Runtime JS", count: runtimeJsUrls.length || Number(co.js_data?.runtime_js_count || 0), desc:`${runtimeNetwork.length} network calls · chunks/scripts`},
+    {name:"JavaScript", count: Number(co.js_data?.js_files || 0), desc:`${co.js_data?.total_endpoints || 0} endpoints · ${co.js_data?.total_secrets || 0} secrets`},
+    {name:"CVEs", count: cves.length, desc:`${co.cve_summary?.critical || 0} critical · ${co.cve_summary?.high || 0} high`},
+    {name:"Phishing", count: phishing.length, desc:`${co.phishing_data?.total_threats || 0} ameaças ativas`},
+    {name:"DNSSEC", count: Array.isArray(co.dnssec_data?.findings) ? co.dnssec_data.findings.length : 0, desc:"Problemas DNSSEC detectados"},
+    {name:"GitHub", count: Number(co.github_repos_data?.total_repos || 0), desc:"Repositorios e exposicoes"},
+    {name:"Cloud", count: co.cloud_assets ? Object.keys(co.cloud_assets).length : 0, desc:"Providers inferidos por IP"},
+    {name:"Tech", count: techCount, desc:"Tecnologias fingerprints"}
+  ];
+
+  const sevRank = {critical:0, high:1, medium:2, low:3, info:4};
+  const topFindings = [...findings]
+    .sort((a,b) => (sevRank[a.severity] ?? 4) - (sevRank[b.severity] ?? 4))
+    .slice(0, 8);
+  const topFindingRows = topFindings.map(f => `<tr>
+    <td><span class="recon-sev" style="color:${_reconSevColor(f.severity)}">${esc(String(f.severity || "info").toUpperCase())}</span></td>
+    <td>${esc(f.title || f.type || "Finding")}</td>
+    <td class="recon-mono">${esc(f.host || f.value || "")}</td>
+    <td>${esc(f.module || f.category || "")}</td>
+  </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Nenhum finding consolidado.</td></tr>`;
+
+  const hostRows = hosts.slice(0, 10).map(h => `<tr>
+    <td class="recon-mono">${esc(h.host || "")}</td>
+    <td>${h.status_code ? `<span class="status-code">${esc(h.status_code)}</span>` : "—"}</td>
+    <td>${esc(h.title || h.server || "")}</td>
+    <td>${(h.screenshot || h.browser_recon?.screenshot) ? "✓" : "—"}</td>
+  </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Nenhum host carregado.</td></tr>`;
+
+  const browserRows = browserResults.slice(0, 8).map(r => `<tr>
+    <td class="recon-mono"><a href="${escAttr(r.url || "")}" target="_blank" rel="noopener">${esc(r.url || "")}</a></td>
+    <td>${esc(r.status ?? "—")}</td>
+    <td>${esc(r.title || "")}</td>
+    <td>${Array.isArray(r.observations) ? r.observations.length : 0}</td>
+  </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Browser recon sem paginas persistidas.</td></tr>`;
+
+  const phishingRows = phishing.slice(0, 6).map(p => `<tr>
+    <td><span class="recon-sev" style="color:${_reconSevColor(p.severity)}">${esc(String(p.severity || "info").toUpperCase())}</span></td>
+    <td class="recon-mono">${esc(p.url || p.domain || "")}</td>
+    <td>${esc(p.title || p.type || "")}</td>
+    <td>${esc(p.risk_score ?? "")}</td>
+  </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Nenhum phishing lead.</td></tr>`;
+
+  return `
+    <div class="recon-kpi-grid">
+      ${_reconKpi(hosts.length, "Hosts", `${co.ct_subdomains?.length || 0} CT/subdomains`, "teal")}
+      ${_reconKpi(findings.length, "Findings", `${co.stats?.findings_critical || 0} critical · ${co.stats?.findings_high || 0} high`, "red")}
+      ${_reconKpi(endpointTotal, "URLs/Endpoints", `${staticEndpoints.length} static · ${pwEndpoints.length} PW`, "blue")}
+      ${_reconKpi(secretTotal, "Secrets", `${staticSecrets.length} JS/static`, "orange")}
+      ${_reconKpi(screenshotTotal, "Screenshots", "capturas disponiveis", "green")}
+      ${_reconKpi(browserResults.length || pwPages.length, "Browser", `${browserData.insecure_cookies || 0} insecure cookies`, "purple")}
+    </div>
+
+    <div class="section-head recon-inner-head">
+      <div class="section-head-main">
+        <div class="section-kicker">Coverage</div>
+        <div class="section-title">Resultados por modulo</div>
+        <div class="section-sub">Resumo operacional do que a pipeline ja consolidou para o alvo.</div>
+      </div>
+    </div>
+    <div class="recon-module-grid">${modules.map(_reconModuleCard).join("")}</div>
+
+    <div class="recon-two-col">
+      <div>
+        <div class="recon-panel-title">Findings prioritarios</div>
+        <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
+          <thead><tr><th>Sev</th><th>Finding</th><th>Host/Valor</th><th>Modulo</th></tr></thead>
+          <tbody>${topFindingRows}</tbody>
+        </table></div></div>
+      </div>
+      <div>
+        <div class="recon-panel-title">Hosts em evidencia</div>
+        <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
+          <thead><tr><th>Host</th><th>Status</th><th>Titulo/Server</th><th>Shot</th></tr></thead>
+          <tbody>${hostRows}</tbody>
+        </table></div></div>
+      </div>
+    </div>
+
+    <div class="recon-two-col">
+      <div>
+        <div class="recon-panel-title">Browser recon</div>
+        <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
+          <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Obs</th></tr></thead>
+          <tbody>${browserRows}</tbody>
+        </table></div></div>
+      </div>
+      <div>
+        <div class="recon-panel-title">Phishing / brand leads</div>
+        <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
+          <thead><tr><th>Risk</th><th>URL</th><th>Title</th><th>Score</th></tr></thead>
+          <tbody>${phishingRows}</tbody>
+        </table></div></div>
+      </div>
+    </div>
+  `;
+}
+
 function _ssShow() {
   const s = _ssShots[_ssIdx] || {};
   const img = document.getElementById('ss-lightbox-img');
@@ -6120,11 +6395,29 @@ async function loadScreenshots(cid, co) {
   const staticEndpoints = co?._unifiedEndpoints || [];
   const staticSecrets   = co?._unifiedSecrets   || [];
 
+  const browserData    = co?.browser_recon_data || {};
+  const browserResults = Array.isArray(browserData.results) ? browserData.results : [];
   const pwPages     = Array.isArray(session?.pages)           ? session.pages           : [];
   const pwEndpoints = Array.isArray(session?.endpoints)       ? session.endpoints       : [];
   const pwTokens    = Array.isArray(session?.tokens)          ? session.tokens          : [];
   const pwGlobals   = Array.isArray(session?.globals_secrets) ? session.globals_secrets : [];
   const pwFindings  = Array.isArray(session?.findings)        ? session.findings        : [];
+  const crawledMap = new Map();
+  browserResults.forEach(r => {
+    const url = r.url || "";
+    if (url && !crawledMap.has(url)) crawledMap.set(url, {
+      url,
+      status_code: r.status,
+      title: r.title || "",
+      server: "browser_recon",
+      _src: "browser",
+    });
+  });
+  pwPages.forEach(p => {
+    const url = p.url || p.final_url || "";
+    if (url && !crawledMap.has(url)) crawledMap.set(url, {...p, url, _src: "playwright"});
+  });
+  const crawledPages = [...crawledMap.values()];
 
   const countEl = document.getElementById("tc-screenshots");
   if (countEl) countEl.textContent = String(shots.length || 0);
@@ -6151,15 +6444,16 @@ async function loadScreenshots(cid, co) {
     <div class="section-head">
       <div class="section-head-main">
         <div class="section-kicker">Recon</div>
-        <div class="section-title">URLs · Endpoints · Secrets</div>
-        <div class="section-sub">Browser evidence — crawled URLs, discovered endpoints and hardcoded credentials.</div>
+        <div class="section-title">Recon evidence and attack surface leads</div>
+        <div class="section-sub">Hosts, findings, URLs, browser evidence, screenshots and module coverage from the latest bug bounty pipeline.</div>
       </div>
-    </div>`;
+    </div>
+    ${_renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, session)}`;
 
   // ── CRAWLED URLS (playwright pages) ─────────────────────────────────────
-  html += _secHead('🌐', `Crawled URLs (${pwPages.length})`, 'Pages visited by the Playwright recon agent.', null);
-  if (pwPages.length) {
-    const pageRows = pwPages.map(p => {
+  html += _secHead('🌐', `Crawled URLs (${crawledPages.length})`, 'Pages visited by the integrated browser recon phase or by a Playwright job.', null);
+  if (crawledPages.length) {
+    const pageRows = crawledPages.map(p => {
       const url = p.url || p.final_url || '';
       return `<tr>
         <td style="font-family:var(--mono);font-size:.72rem;word-break:break-all">
@@ -6167,24 +6461,29 @@ async function loadScreenshots(cid, co) {
         </td>
         <td style="text-align:center">${p.status_code ?? '—'}</td>
         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.7rem">${esc(p.title||'')}</td>
-        <td style="color:var(--text3);font-size:.68rem">${esc(p.server||'')}</td>
+        <td style="color:var(--text3);font-size:.68rem">${esc(p._src || p.server || '')}</td>
       </tr>`;
     }).join('');
     html += `<div class="table-shell"><div class="tl-wrap"><table class="jobs-table">
-      <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Server</th></tr></thead>
+      <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Source</th></tr></thead>
       <tbody>${pageRows}</tbody></table></div></div>`;
   } else {
-    html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No crawled pages from Playwright. Run Playwright Recon job to populate.</div>`;
+    html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No crawled pages yet. Run the browser phase in the bug bounty pipeline.</div>`;
   }
 
   // ── ENDPOINTS ────────────────────────────────────────────────────────────
   // Merge static (wayback/JS) + playwright endpoints, deduplicate by URL
   const epMap = new Map();
-  staticEndpoints.forEach(e => epMap.set(e.url, {...e, _src:'static'}));
+  staticEndpoints.forEach(e => epMap.set(e.url, {...e, _src:e.source || 'static'}));
   pwEndpoints.forEach(e => {
     const url = e.url || '';
     if (!epMap.has(url)) epMap.set(url, {url, method: e.method||'GET', type:'browser', _src:'playwright'});
   });
+  browserResults.forEach(r => (r.api_endpoints || []).forEach(e => {
+    const url = typeof e === "string" ? e : (e.url || e.endpoint || e.path || "");
+    if (!url || epMap.has(url)) return;
+    epMap.set(url, {url, method: e.method || "GET", type: "browser", _src: "browser"});
+  }));
   const mergedEp = [...epMap.values()];
 
   html += _secHead('🔗', `Endpoints (${mergedEp.length})`, 'API paths and routes from JS analysis and browser crawl.', null);
@@ -6192,22 +6491,21 @@ async function loadScreenshots(cid, co) {
     const SEV = {critical:'#fb7185',high:'#fb923c',medium:'#fbbf24',low:'#4ade80',info:'#94a3b8'};
     const epRows = mergedEp.slice(0, 500).map(e => {
       const mc = _methodColor ? _methodColor(e.method||'GET') : '#60a5fa';
-      const src = e._src === 'playwright' ? `<span style="font-size:.58rem;color:var(--teal);opacity:.7">PW</span>` : '';
       return `<tr>
         <td style="width:60px">
           <span style="font-family:var(--mono);font-size:.64rem;font-weight:700;color:${mc}">${esc(e.method||'GET')}</span>
-          ${src}
         </td>
         <td style="font-family:var(--mono);font-size:.7rem;word-break:break-all">
           <a href="${esc(e.url)}" target="_blank" rel="noopener" style="color:var(--text1);text-decoration:none">${esc(e.url)}</a>
         </td>
+        <td style="font-size:.62rem;color:var(--teal);font-family:var(--mono)">${esc(e._src || e.source || '')}</td>
         <td style="font-size:.66rem;color:var(--text3)">${esc(e.type||'')}</td>
         <td style="font-size:.66rem;color:${e.severity?SEV[e.severity]||'#94a3b8':'var(--text3)'}">${e.severity?e.severity.toUpperCase():''}</td>
       </tr>`;
     }).join('');
-    const overflow = mergedEp.length > 500 ? `<tr><td colspan="4" style="padding:8px 12px;color:var(--text3);font-size:.7rem">${mergedEp.length - 500} more endpoints — export CSV for full list.</td></tr>` : '';
+    const overflow = mergedEp.length > 500 ? `<tr><td colspan="5" style="padding:8px 12px;color:var(--text3);font-size:.7rem">${mergedEp.length - 500} more endpoints — export CSV for full list.</td></tr>` : '';
     html += `<div class="table-shell"><div class="tl-wrap" style="max-height:360px;overflow-y:auto"><table class="jobs-table">
-      <thead><tr><th>Method</th><th>URL</th><th>Type</th><th>Risk</th></tr></thead>
+      <thead><tr><th>Method</th><th>URL</th><th>Source</th><th>Type</th><th>Risk</th></tr></thead>
       <tbody>${epRows}${overflow}</tbody></table></div></div>`;
   } else {
     html += `<div style="padding:12px 0;color:var(--text3);font-size:.78rem">No endpoints discovered yet. Run wayback, urlfinder, js_endpoints or Playwright Recon.</div>`;
@@ -6219,6 +6517,9 @@ async function loadScreenshots(cid, co) {
   staticSecrets.forEach(s => secArr.push({type:s.type||'secret', value:s.value||'', file:s.file||'', host:s.host||'', severity:s.severity||'medium', _src:'static'}));
   pwTokens.forEach(t => secArr.push({type:t.type||'token', value:t.value||JSON.stringify(t), file:'', host:t.host||'', severity:'high', _src:'playwright'}));
   pwGlobals.forEach(g => secArr.push({type:'global', value:g.sample||g.key||'', file:g.key||'', host:'', severity:'medium', _src:'playwright'}));
+  browserResults.forEach(r => (r.secrets_found || []).forEach(s => {
+    secArr.push({type:s.type || "browser_secret", value:s.value || s.secret || JSON.stringify(s), file:r.url || "", host:"", severity:s.severity || "high", _src:"browser"});
+  }));
 
   html += _secHead('🔑', `Secrets & Hardcoded Keys (${secArr.length})`, 'Credentials, tokens and API keys extracted from JS bundles and browser globals. Click value to reveal.', null);
   if (secArr.length) {
@@ -6374,6 +6675,7 @@ async function loadJobs() {
   if (!tbody) return;
   const note = document.getElementById("jobs-note");
   const pager = document.getElementById("jobs-pager");
+  const deleteFilterBtn = document.getElementById("jobs-delete-filter");
   // KPI cards + per-company cards are driven by the aggregate summary so they
   // always reflect true totals, independent of what the table is showing.
   loadJobCompanyCards();
@@ -6383,6 +6685,7 @@ async function loadJobs() {
     // Drill-down mode: the table becomes the per-domain list for one company.
     if (_jobDrilldownCid) {
       if (pager) pager.style.display = "none";
+      if (deleteFilterBtn) deleteFilterBtn.style.display = "none";
       const cid = _jobDrilldownCid;
       const q = `company_id=${encodeURIComponent(cid)}`;
       const arr = a => Array.isArray(a) ? a : [];
@@ -6405,7 +6708,7 @@ async function loadJobs() {
       const back = `<a href="#" onclick="exitJobDrilldown();return false" style="color:var(--teal)">voltar para a fila</a>`;
       if (note) note.innerHTML = _jobDrillQuery
         ? `${domainRows.length} dominio(s) encontrados por "${esc(_jobDrillQuery)}" em <b>${esc(_companyNameForJob(cid))}</b>. ${back}`
-        : `Dominios de <b>${esc(_companyNameForJob(cid))}</b>: ${domainRows.length.toLocaleString()} dominio(s), ${waitT.toLocaleString()} aguardando, ${doneT.toLocaleString()} concluidos, ${stoppedT.toLocaleString()} parados. ${back}`;
+        : `Dominios de <b>${esc(_companyNameForJob(cid))}</b>: ${domainRows.length.toLocaleString()} dominio(s), ${waitT.toLocaleString()} aguardando, ${doneT.toLocaleString()} finalizados, ${stoppedT.toLocaleString()} parados. ${back}`;
       return;
     }
 
@@ -6414,6 +6717,9 @@ async function loadJobs() {
     const type = document.getElementById("jobs-type-filter")?.value || "";
     const statusEl = document.getElementById("jobs-status-filter");
     const status = statusEl ? statusEl.value : "running";
+    if (deleteFilterBtn) {
+      deleteFilterBtn.style.display = ["done", "error", "cancelled", "stopped"].includes(status) ? "inline-flex" : "none";
+    }
     const offset = (_jobsPage - 1) * JOBS_PAGE_SIZE;
     const url = `/api/jobs?limit=${JOBS_PAGE_SIZE}&offset=${offset}&include_total=1`
       + (type ? "&job_type=" + encodeURIComponent(type) : "")
@@ -6548,6 +6854,7 @@ function renderJobs(jobs, ctx) {
     const cls = _jobStatusClass(job.status);
     const err = job.error ? `<div class="job-error" title="${esc(job.error)}">${esc(job.error)}</div>` : "";
     const canCancel = job.status === "pending";
+    const canDelete = ["done", "error", "cancelled", "stopped"].includes(job.status);
     const canArtifacts = job.job_type === "playwright_recon" && job.status === "done";
     const isErrorOrStuck = job.status === "error" || (job.status === "running" && job.attempts > 1);
     const rowClass = isErrorOrStuck ? " class='job-row-err'" : "";
@@ -6578,6 +6885,7 @@ function renderJobs(jobs, ctx) {
           ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'report')}" target="_blank" rel="noopener">Relatorio</a>` : ""}
           ${canArtifacts ? `<a class="btn btn-secondary btn-icon" href="${_jobArtifactUrl(job.id, 'session')}" target="_blank" rel="noopener">Sessao</a>` : ""}
           ${canCancel ? `<button type="button" class="btn btn-icon job-cancel" data-job-action="cancel" data-job-id="${escAttr(job.id)}">Cancelar</button>` : ""}
+          ${canDelete ? `<button type="button" class="btn btn-icon job-delete" data-job-action="delete" data-job-id="${escAttr(job.id)}">Excluir</button>` : ""}
         </div>
       </td>
     </tr>`;
@@ -6705,7 +7013,7 @@ function renderJobCompanyCards(summary) {
         <div class="job-company-card-chips">
           ${chip(c.running, "rodando", "running")}
           ${chip(c.pending, "pendente", "pending")}
-          ${chip(c.done, "concluido", "done")}
+          ${chip(c.done, "finalizado", "done")}
           ${chip(c.error, "erro", "error")}
           ${chip(c.cancelled, "cancelado", "cancelled")}
           ${chip(c.stopped, "parado", "stopped")}
@@ -6880,6 +7188,46 @@ async function cancelJob(jobId) {
   }
 }
 
+async function deleteJob(jobId) {
+  if (!confirm("Excluir este registro finalizado da fila?")) return;
+  try {
+    const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {method:"DELETE", headers:_authHeaders()});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(data.error || "Could not delete job");
+      return;
+    }
+    loadJobs();
+  } catch(e) {
+    alert("Connection error: " + e.message);
+  }
+}
+
+async function deleteJobsFilter() {
+  const type = document.getElementById("jobs-type-filter")?.value || "";
+  const status = document.getElementById("jobs-status-filter")?.value || "";
+  const finalStatuses = ["done", "error", "cancelled", "stopped"];
+  if (!finalStatuses.includes(status)) {
+    alert("Selecione um status finalizado para limpar: Concluido, Erro, Parado ou Cancelado.");
+    return;
+  }
+  if (!confirm(`Excluir todos os registros com status "${_jobStatusLabel(status)}"${type ? " de " + _jobTypeLabel(type) : ""}? Jobs rodando e pendentes nao serao apagados.`)) return;
+  const params = new URLSearchParams({status});
+  if (type) params.set("job_type", type);
+  try {
+    const r = await fetch(`/api/jobs?${params.toString()}`, {method:"DELETE", headers:_authHeaders()});
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      alert(data.error || "Could not delete jobs");
+      return;
+    }
+    _jobsPage = 1;
+    loadJobs();
+  } catch(e) {
+    alert("Connection error: " + e.message);
+  }
+}
+
 function initJobQueueHandlers() {
   if (window.__jobQueueHandlersReady) return;
   window.__jobQueueHandlersReady = true;
@@ -6900,6 +7248,8 @@ function initJobQueueHandlers() {
       openDomainResults(btn.dataset.cid || "", btn.dataset.target || "");
     } else if (action === "cancel") {
       cancelJob(btn.dataset.jobId || "");
+    } else if (action === "delete") {
+      deleteJob(btn.dataset.jobId || "");
     }
   });
 
@@ -7008,8 +7358,8 @@ const RUNTIME_SCHEMA = [
     fields:[
       {key:"asm_rate_mode",          label:"Default Rate Mode",       tag:"runtime", hint:"balanced",
        tooltip:"Velocidade padrão dos scans. stealth = lento e invisível (24/7). balanced = moderado. fast = rápido mas pode alertar WAFs e bloqueadores."},
-      {key:"asm_scan_mode",          label:"Default Scan Mode",       tag:"runtime", hint:"full",
-       tooltip:"Perfil padrão do pipeline. passive_bulk = só descoberta de subdomínios (seguro para milhares). full = pipeline completa (79 ferramentas, ~3h). active_light = só fases leves (headers, JS, crawl). active_heavy = só fases pesadas (portscan, nuclei)."},
+      {key:"asm_scan_mode",          label:"Default Scan Mode",       tag:"runtime", hint:"bug_bounty",
+       tooltip:"Pipeline padrão da ferramenta. bug_bounty executa descoberta, validação, priorização, JS/API, Playwright, checks leves, portas priorizadas e evidências."},
     ]
   },
   { group:"Watchdog", icon:"🛡", desc:"Safety limits that pause the queue before the machine crashes",
@@ -7035,7 +7385,7 @@ const _RUNTIME_DEFAULTS = {
   asm_domain_fanout: "3",
   asm_gate_default: "3",
   asm_rate_mode: "balanced",
-  asm_scan_mode: "full",
+  asm_scan_mode: "bug_bounty",
   asm_watchdog_max_load: "4.0",
   asm_watchdog_min_mem_mb: "1536",
   asm_watchdog_max_procs: "10",
@@ -7047,7 +7397,6 @@ if (typeof ASM !== 'undefined' && ASM.runtimeConfig) {
 }
 
 const PLAYWRIGHT_SETTING_KEYS = [
-  "playwright_auto_run",
   "playwright_safe_mode",
   "playwright_headless",
   "playwright_allow_external",
@@ -7264,7 +7613,6 @@ function _toolMatchesFilter(tool, categoryFilter, availFilter) {
 function _renderPlaywrightDefaultsCard() {
   const cfg = _currentPlaywrightDefaults();
   const rows = [
-    {label:"Auto run after scan", key:"playwright_auto_run", type:"checkbox", def:true},
     {label:"Safe mode", key:"playwright_safe_mode", type:"checkbox", def:true},
     {label:"Headless", key:"playwright_headless", type:"checkbox", def:true},
     {label:"Allow external", key:"playwright_allow_external", type:"checkbox", def:false},
@@ -7287,8 +7635,8 @@ function _renderPlaywrightDefaultsCard() {
       <div class="section-head">
         <div class="section-head-main">
           <div class="section-kicker">Playwright Defaults</div>
-          <div class="section-title">Default browser recon profile</div>
-          <div class="section-sub">These settings are used automatically after a completed scan and also prefill the manual Playwright run dialog.</div>
+          <div class="section-title">Browser phase defaults</div>
+          <div class="section-sub">These settings are used by the bug bounty browser phase and prefill the manual Playwright run dialog.</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <span id="tools-pw-save-status" class="save-status"></span>
@@ -7440,7 +7788,6 @@ function filterTools() {
 async function savePlaywrightDefaults() {
   if (!SERVER_MODE) return;
   const cfg = {
-    playwright_auto_run: document.getElementById("tools-playwright_auto_run")?.checked ?? true,
     playwright_safe_mode: document.getElementById("tools-playwright_safe_mode")?.checked ?? true,
     playwright_headless: document.getElementById("tools-playwright_headless")?.checked ?? true,
     playwright_allow_external: document.getElementById("tools-playwright_allow_external")?.checked ?? false,
@@ -7616,18 +7963,15 @@ const _phudModTimes = {};   // Track module start/end for Gantt
 const _phudParticles = {};  // Track animation frames
 
 const PIPELINE_PHASES_DEF = [
-  {id:"passive",      label:"PASSIVE",    icon:"◉", color:"#00e5ff", mods:["subfinder","assetfinder","theharvester","dns","email","certs","asn","asnmap","related","typosquat"]},
-  {id:"intel",        label:"INTEL",      icon:"⚡", color:"#fbbf24", mods:["shodan","breach","grep_app","certstream"]},
-  {id:"supply_chain", label:"SUPPLY",     icon:"☁",  color:"#fb923c", mods:["dep_confusion","cloud"]},
-  {id:"cleanup",      label:"CLEANUP",    icon:"🧹", color:"#4ade80", mods:["cleanup"]},
-  {id:"validation",   label:"VALIDATION", icon:"🔡", color:"#818cf8", mods:["dns_brute","leaks"]},
-  {id:"profiling",    label:"PROFILING",  icon:"🔬", color:"#00e5ff", mods:["headers","waf","wappalyzer","wappalyzergo","whatweb"]},
-  {id:"js_tech",      label:"JS/TECH",    icon:"📜", color:"#fbbf24", mods:["js","js_endpoints","js_secrets"]},
-  {id:"crawl",        label:"CRAWL",      icon:"🕷", color:"#4ade80", mods:["wayback","urlfinder","screenshot","gowitness","favicon_hunt"]},
-  {id:"enum_active",  label:"ENUM",       icon:"⚙",  color:"#fb923c", mods:["vhost","api_panels","param_mine"]},
-  {id:"portscan",     label:"PORTSCAN",   icon:"🔭", color:"#f43f5e", mods:["portscan","cloudlist"]},
-  {id:"services",     label:"SERVICES",   icon:"🔌", color:"#fb923c", mods:["cms_scan","services"]},
-  {id:"vulnscan",     label:"VULNSCAN",   icon:"⚠",  color:"#f43f5e", mods:["takeover","subjack","cve","cloud_enum","cors_scan","infra_exposure","graphql","browser_recon","supply_chain"]},
+  {id:"discovery",    label:"DISCOVERY",       icon:"🛰",  color:"#00e5ff", mods:["subfinder","assetfinder","certs","alienvault_otx","urlscan_io","rapiddns","hackertarget","github_subdomains","wayback","urlfinder"]},
+  {id:"validation",   label:"VALIDAÇÃO",       icon:"🔍",  color:"#818cf8", mods:["dns","dns_brute","leaks"]},
+  {id:"intel",        label:"INTEL",           icon:"⚡",  color:"#fbbf24", mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","phishing","dep_confusion"]},
+  {id:"fingerprint",  label:"FINGERPRINT",     icon:"🔬",  color:"#00e5ff", mods:["headers","waf","wappalyzer","whatweb","vendor_fp","service_version","favicon_hunt","screenshot","gowitness"]},
+  {id:"api_mapping",  label:"JS/API",          icon:"⬡",  color:"#4ade80", mods:["js","js_endpoints","js_secrets","api_discovery_extra","graphql"]},
+  {id:"browser",      label:"PLAYWRIGHT",      icon:"▣",  color:"#c084fc", mods:["browser_crawl","browser_recon"]},
+  {id:"bug_checks",   label:"CHECKS",          icon:"⚠",  color:"#f43f5e", mods:["takeover","subjack","cors_scan","open_redirect","host_header_injection","infra_exposure","cloud_enum","default_creds","dnssec","waf_bypass","tableau","github_repos","supply_chain"]},
+  {id:"services",     label:"SERVIÇOS",        icon:"🔌",  color:"#fb923c", mods:["portscan","cloudlist","services","cms_scan","database_enum_extra"]},
+  {id:"evidence",     label:"EVIDÊNCIA",       icon:"✓",   color:"#4ade80", mods:["cve","api_panels","screenshot_diff"]},
 ];
 
 const _MOD_TO_PHASE = {};
@@ -7773,42 +8117,57 @@ function renderPipelineStatus(cid) {
     </div>`;
   }).join("");
 
-  // ── Gantt rows ───────────────────────────────────────────────────────────
+  // ── Gantt: show only modules with timing data ──────────────────────────
   const scanDuration = now - (mt._scanStart || now);
   const totalMs = Math.max(scanDuration, 5000);
 
   let ganttHtml = "";
+  const doneMods = Object.keys(modMap).filter(m => modMap[m] !== "not_run" && modMap[m] !== "idle");
+  const runningMod = doneMods.find(m => modMap[m] === "running");
+  const doneCount = doneMods.filter(m => modMap[m] === "done").length;
+  const errCount  = doneMods.filter(m => modMap[m] === "error").length;
+
+  // Phase group summary
   PIPELINE_PHASES_DEF.forEach(ph => {
-    const phSt = _phudPhaseStatus(ph.id, modMap);
-    const modsWithData = ph.mods.filter(m => modMap[m] && modMap[m] !== "not_run");
-    if (!modsWithData.length && phSt === "idle") return;
+    const phMods = ph.mods.filter(m => modMap[m] && modMap[m] !== "not_run");
+    const phDone = phMods.filter(m => modMap[m] === "done").length;
+    const phRunning = phMods.find(m => modMap[m] === "running");
+    const phSt = phRunning ? "active" : phDone >= ph.mods.length ? "done" : phDone > 0 ? "active" : "idle";
+    ganttHtml += `<div class="phud-phase-hdr ${phSt==='active'?'ph-active':phSt==='done'?'ph-done':''}" style="border-left:3px solid ${ph.color};padding:4px 10px;margin-top:4px;border-radius:3px;background:${phSt==='active'?'rgba(255,255,255,0.04)':'transparent'}">
+      <span style="font-weight:700;font-size:.68rem;color:var(--text)">${ph.icon} ${esc(ph.label)}</span>
+      <span style="margin-left:8px;font-size:.58rem;color:var(--text3)">${phDone}/${ph.mods.length}</span>
+    </div>`;
+  });
 
-    const phCls = phSt === "active" ? "ph-active" : phSt === "done" ? "ph-done" : phSt === "skipped" ? "ph-skip" : "";
-    const toolLabel = _phudPhaseToolLabel(ph, modMap);
-    ganttHtml += `<div class="phud-phase-hdr ${phCls}"><div class="phud-ph-dot" style="background:${ph.color};opacity:.7"></div>${esc(toolLabel)}<span style="margin-left:8px;color:var(--text3);font-size:.58rem;text-transform:uppercase;letter-spacing:.08em">${esc(ph.label)}</span></div>`;
+  // Running module highlight
+  if (runningMod) {
+    ganttHtml += `<div style="padding:6px 10px;font-size:.64rem;color:#00e5ff;background:rgba(0,229,255,0.05);border-radius:4px;margin:2px 0">
+      ▶ ${runningMod} <span style="color:var(--text3);font-size:.58rem">rodando...</span>
+    </div>`;
+  }
 
-    ph.mods.forEach(m => {
-      const st = modMap[m] || "not_run";
-      if (st === "not_run") return;
+  // Last 5 completed modules
+  const recentMods = doneMods.filter(m => modMap[m] === "done" && mt[m]).slice(-5);
+  if (recentMods.length) {
+    ganttHtml += `<div style="font-size:.58rem;color:var(--text3);padding:4px 10px">Últimos concluídos:</div>`;
+    recentMods.forEach(m => {
       const t = mt[m] || {};
+      const durMs = t.end && t.start ? t.end - t.start : 0;
+      const durStr = durMs > 60000 ? `${Math.round(durMs/60000)}m` : durMs > 1000 ? `${Math.round(durMs/1000)}s` : "";
+      const barColor = "#22c55e";
       const startOff = t.start ? ((t.start - mt._scanStart) / totalMs * 100).toFixed(1) : "0";
-      const endOff   = t.end   ? ((t.end   - mt._scanStart) / totalMs * 100).toFixed(1) :
-                       st === "running"  ? "100" : startOff;
-      const width    = Math.max(parseFloat(endOff) - parseFloat(startOff), 1).toFixed(1);
-      const durMs    = t.end ? t.end - (t.start||mt._scanStart) : st === "running" ? now - (t.start||mt._scanStart) : 0;
-      const durStr   = durMs > 60000 ? `${Math.round(durMs/60000)}m` : durMs > 1000 ? `${Math.round(durMs/1000)}s` : "";
+      const endOff = t.end ? ((t.end - mt._scanStart) / totalMs * 100).toFixed(1) : startOff;
+      const width = Math.max(parseFloat(endOff) - parseFloat(startOff), 1).toFixed(1);
 
-      ganttHtml += `<div class="phud-gantt-row">
-        <div class="phud-gantt-lbl ${st}">${m}</div>
-        <div class="phud-gantt-track">
-          <div class="phud-gantt-bar ${st}" style="left:${startOff}%;width:${width}%">
-            <span class="phud-gantt-bar-lbl">${st === "running" ? "…" : ""}</span>
-          </div>
+      ganttHtml += `<div style="display:flex;align-items:center;gap:6px;padding:2px 10px">
+        <div style="font-size:.6rem;color:var(--text2);width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right" title="${m}">${m}</div>
+        <div style="flex:1;height:8px;background:rgba(255,255,255,0.03);border-radius:4px;overflow:hidden">
+          <div style="left:${startOff}%;width:${width}%;background:${barColor};height:100%;border-radius:4px;opacity:.8;position:relative"></div>
         </div>
-        <div class="phud-gantt-dur">${durStr}</div>
+        <div style="font-size:.55rem;color:var(--text3);width:28px">${durStr}</div>
       </div>`;
     });
-  });
+  }
 
   // ── Last log line ────────────────────────────────────────────────────────
   const logLines = ps.log || [];
@@ -7842,28 +8201,23 @@ function renderPipelineStatus(cid) {
 
   el.innerHTML = `
   <div class="phud-wrap" id="phud-wrap-${cid}">
-    <canvas class="phud-canvas" id="phud-canvas-${cid}"></canvas>
     <div class="phud-inner">
 
       <div class="phud-header">
-        <span class="phud-title">🛰 Pipeline HUD</span>
+        <span class="phud-title">🛰 Pipeline</span>
         <span class="phud-badge ${isRunning?"running":isQueued?"idle":isDone?"done":"idle"}">${isRunning?"● RUNNING":isQueued?"▣ QUEUED":isDone?"✓ DONE":"IDLE"}</span>
         ${modeIcon ? `<span class="phud-badge idle">${modeIcon} ${ps.mode||""}</span>` : ""}
         ${cfBadge}${cleanupBadge}${mullvadBadge}
         <div class="phud-meta">
           <span>🖥 ${ps.host_count||0} hosts</span>
-          <span>📊 ${donePhases}/${totalPhases} fases</span>
+          <span>📊 ${donePhases}/${totalPhases} grupos</span>
           ${ps.started_at ? `<span>🕐 ${ps.started_at}</span>` : ""}
         </div>
       </div>
 
-      <div class="phud-tl">
-        <div class="phud-tl-line"></div>
-        <div class="phud-tl-glow" style="right:${glowRight}%"></div>
-        ${nodesHtml}
+      <div class="phud-gantt" style="margin-top:8px;position:relative">
+        ${ganttHtml || '<div style="padding:20px;color:var(--text3);text-align:center;font-size:.72rem">Aguardando início…</div>'}
       </div>
-
-      <div class="phud-gantt">${ganttHtml || '<div style="font-size:.65rem;color:var(--text3);padding:8px 0 4px 108px">Waiting for modules…</div>'}</div>
 
       ${notDoneHtml}
       ${mullvadFailuresHtml}
@@ -8511,7 +8865,7 @@ async function renderVulnsTab(co) {
     <div class="findings-list" id="f-list"></div>
     <div class="empty-state" id="f-empty" style="display:none"><div class="empty-state-icon">∅</div><div class="empty-state-title">No confirmed vulns match the current filters</div><div class="empty-state-copy">Try widening the search terms or clearing severity/category filters.</div></div>`;
   } else {
-    html += `<div class="empty-state"><div class="empty-state-icon">∅</div><div class="empty-state-title">No confirmed vulnerabilities yet</div><div class="empty-state-copy">Run the full scan to populate this view.</div></div>`;
+    html += `<div class="empty-state"><div class="empty-state-icon">∅</div><div class="empty-state-title">No confirmed vulnerabilities yet</div><div class="empty-state-copy">Run the bug bounty pipeline to populate this view.</div></div>`;
   }
 
   html += `<div style="margin-top:18px">`;

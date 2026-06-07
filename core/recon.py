@@ -29,6 +29,8 @@ from utils import cmd_trace as _ct
 from utils import rate_limiter as _rl
 from utils.tool_gate import gate_for as _gate_for
 
+_MAX_RATE_WAIT = float(os.environ.get("ASM_HTTP_RATE_MAX_WAIT", "30") or 30)
+
 _SUBPROCESS_CONTEXT = threading.local()
 
 
@@ -246,7 +248,14 @@ def _rate_wait(domain: str) -> None:
         elapsed = now - state["last"]
         if elapsed < gap:
             sleep_rate = gap - elapsed
-        state["last"] = time.monotonic() + sleep_backoff + sleep_rate
+        total_sleep = sleep_backoff + sleep_rate
+        if total_sleep > _MAX_RATE_WAIT:
+            state["last"] = time.monotonic()
+            raise TimeoutError(
+                f"rate wait for {domain} exceeded {_MAX_RATE_WAIT:.1f}s "
+                f"(computed {total_sleep:.1f}s)"
+            )
+        state["last"] = time.monotonic() + total_sleep
     # Sleep outside the lock so parallel threads on the same domain don't serialize
     if sleep_backoff > 0:
         time.sleep(sleep_backoff)
@@ -3954,8 +3963,9 @@ def run_wayback(domain: str, limit: int = 5000, hosts: list = None) -> dict:
     """Mine historical URLs via gau (with Wayback CDX fallback) for sensitive paths.
     Runs on root domain; CDX also covers all subdomains via wildcard query.
     """
+    import shutil as _shutil
     all_urls: list = []
-    gau_ok = subprocess.run(["which", "gau"], capture_output=True, text=True).returncode == 0
+    gau_ok = _shutil.which("gau") is not None
     if gau_ok:
         try:
             proc = _subp(
@@ -4371,7 +4381,7 @@ def _check_hibp_domain(domain: str, api_key: str = None) -> dict:
 
 def _check_trufflehog_github(domain: str) -> list:
     """Use trufflehog to scan GitHub for secrets related to domain."""
-    th = subprocess.run(["which","trufflehog"], capture_output=True, text=True)
+    th = shutil.which("trufflehog") is not None
     if th.returncode != 0:
         return []
     findings = []
@@ -4558,10 +4568,8 @@ def run_port_scan(hosts: list, ports: str = _DEFAULT_SCAN_PORTS,
     if tool == "auto":
         # nmap first — works without root; masscan needs raw sockets (root only)
         for candidate in ("naabu", "nmap", "masscan"):
-            chk = subprocess.run(["which", candidate], capture_output=True, text=True)
-            if chk.returncode == 0:
-                tool = candidate
-                break
+            if shutil.which(candidate):
+                tool = candidate; break
         else:
             tool = None
 
@@ -5564,6 +5572,7 @@ def run_js_recon(domains: list, hosts: list) -> dict:
         # Runtime network capture (Playwright)
         "runtime_network":    all_network_calls[:500],  # XHR/fetch observed at runtime
         "runtime_network_map": runtime_network_map,     # keyed by target URL
+        "runtime_js_urls":    list(pw_result.get("runtime_js_urls", []))[:500],
         "runtime_js_count":   len(pw_result.get("runtime_js_urls", [])),
         # Legacy flat fields for backward compat
         "secrets_found":      total_secrets,
@@ -9791,9 +9800,8 @@ def _probe_swagger_endpoint(host: str, path: str, timeout: int = 5) -> dict | No
 
 def _run_kiterunner_on_hosts(hosts: list, workers: int = 5) -> list:
     """Run kiterunner if installed; fall back to swagger/openapi probes."""
-    has_kr = subprocess.run(
-        ["which", "kiterunner"], capture_output=True, text=True
-    ).returncode == 0
+    import shutil as _shutil
+    has_kr = _shutil.which("kiterunner") is not None
 
     findings = []
     if has_kr:
@@ -9865,9 +9873,7 @@ def run_api_discovery_extra(hosts: list, domains: list) -> dict:
         "findings": findings,
         "total": len(findings),
         "hosts_probed": len(set(h.get("host", "") for h in hosts[:50] if h.get("host"))),
-        "sources_used": ["swagger_probe"] + (["kiterunner"] if subprocess.run(
-            ["which", "kiterunner"], capture_output=True, text=True
-        ).returncode == 0 else []),
+        "sources_used": ["swagger_probe"] + (["kiterunner"] if has_kr else []),
         "scanned_at": datetime.now().isoformat(timespec="seconds"),
     }
 

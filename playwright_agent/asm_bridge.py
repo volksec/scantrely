@@ -122,7 +122,6 @@ def build_playwright_job_options(
         "headless": _pick_bool("playwright_headless", True),
         "auth_state": _pick_str("playwright_auth_state", ""),
         "auth_state_b": _pick_str("playwright_auth_state_b", ""),
-        "auto_run": _pick_bool("playwright_auto_run", True),
     }
 
 
