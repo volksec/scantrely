@@ -233,6 +233,12 @@
       if (typeof showPage === 'function') showPage('tools');
     } else if (parts[0] === 'admins') {
       if (typeof showPage === 'function') showPage('admins');
+    } else if (parts[0] === 'runtime') {
+      if (typeof showPage === 'function') showPage('runtime');
+    } else if (parts[0] === 'bbhelper') {
+      if (typeof showPage === 'function') showPage('bbhelper');
+    } else if (parts[0] === 'exttools') {
+      if (typeof showPage === 'function') showPage('exttools');
     }
   }
 

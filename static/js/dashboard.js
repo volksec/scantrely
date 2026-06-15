@@ -382,11 +382,12 @@ function _hydratePlaywrightInventoryBatch(jobs) {
   });
 }
 
-function _severityCard(severity, count) {
+function _severityCard(severity, count, cid) {
   const classes = { critical: "c", high: "h", medium: "m", info: "i" };
   const labels = { critical: "Critical", high: "High", medium: "Medium", info: "Info" };
+  const click = cid ? ` onclick="goToVulnSeverity(${_jsArg(cid)},'${severity}',event)" style="cursor:pointer" title="Ver vulnerabilidades ${labels[severity] || severity}"` : "";
   return `
-    <div class="findings-mini ${classes[severity] || ""}">
+    <div class="findings-mini ${classes[severity] || ""}"${click}>
       <div class="findings-mini-num">${Number(count || 0)}</div>
       <div class="findings-mini-lbl">${labels[severity] || severity || "Info"}</div>
     </div>`;
@@ -531,8 +532,44 @@ async function _updateJobCountBadge() {
   try {
     const r = await fetch("/api/jobs?limit=50", {headers: _authHeaders()});
     if (!r.ok) return;
-    _updateJobCountBadgeFromList(await r.json());
+    const jobs = await r.json();
+    _updateJobCountBadgeFromList(jobs);
+    _updateScanProgressPill(jobs);
   } catch(e) {}
+}
+
+// ── Global "scan in progress" pill — visible from any page so the user
+// always knows a long-running pipeline is active before closing the app ──
+let _scanProgressCid = null;
+async function _updateScanProgressPill(jobs) {
+  const el = document.getElementById("topbar-scan-progress");
+  if (!el) return;
+  const running = (jobs || []).find(j => j.job_type === "pipeline" && j.status === "running");
+  if (!running) {
+    el.style.display = "none";
+    _scanProgressCid = null;
+    return;
+  }
+  _scanProgressCid = running.company_id;
+  const co = allCompanies().find(c => c.id === running.company_id);
+  const coName = co ? co.name : running.company_id;
+  try {
+    const r = await fetch(`/api/recon/${encodeURIComponent(running.company_id)}/pipeline`, {headers: _authHeaders()});
+    if (!r.ok) return;
+    const d = await r.json();
+    if (d.status !== "running" && d.status !== "queued") { el.style.display = "none"; return; }
+    const total = Array.isArray(d.phases) ? d.phases.length : 0;
+    const idx = (d.phase_idx || 0) + 1;
+    const pct = total ? Math.min(100, Math.round((idx / total) * 100)) : 0;
+    el.innerHTML = `
+      <span class="pulse"></span>
+      <span class="tsp-label">${esc(coName)} — Fase ${idx}${total ? "/" + total : ""}: ${esc(d.phase_label || "")}</span>
+      <span class="tsp-bar"><span style="width:${pct}%"></span></span>`;
+    el.style.display = "flex";
+  } catch(e) {}
+}
+function _goToScanProgress() {
+  if (_scanProgressCid) selectCompany(_scanProgressCid);
 }
 
 let extraCompanies = (typeof ASM !== 'undefined' && ASM.extraCompanies) ? ASM.extraCompanies
@@ -557,6 +594,8 @@ function _syncSidebarActive() {
     companies: "nav-all",
     jobs: "nav-jobs",
     tools: "nav-tools",
+    bbhelper: "nav-bbhelper",
+    exttools: "nav-exttools",
     admins: "nav-admins",
     runtime: "nav-runtime",
   };
@@ -933,6 +972,7 @@ const TAB_GROUPS = {
   screenshots: ['screenshots'],
   operation:   ['operation'],
   infragroup:  ['infra'],
+  vulns:       ['vulns'],
   logs:        ['toollogs'],
   pipeline:    ['pipeline', 'terminal']
 };
@@ -990,6 +1030,26 @@ async function switchTab(name, btn) {
   const groupName = TAB_TO_GROUP[name] || name;
   const groupBtn = document.querySelector(`.tab-btn[data-group="${groupName}"]`) || btn;
   return switchGroup(groupName, groupBtn);
+}
+
+// Jump straight from any critical/high/medium/info severity indicator to the
+// filtered Vulnerabilities tab for the given company.
+async function goToVulnSeverity(cid, severity, ev) {
+  if (ev) ev.stopPropagation();
+  if (state.currentId !== cid || state.page !== "company") {
+    await selectCompany(cid);
+  }
+  const groupBtn = document.querySelector('.tab-btn[data-group="vulns"]');
+  await switchGroup("vulns", groupBtn);
+  setTimeout(() => {
+    const sevSel = document.getElementById("f-sev");
+    if (sevSel) {
+      sevSel.value = (severity === "info") ? "" : severity;
+      applyFindFilter(cid);
+    }
+    const list = document.getElementById("f-list") || document.getElementById("tab-vulns");
+    if (list) list.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 60);
 }
 
 function switchHostsPanel(panel) {
@@ -1174,7 +1234,7 @@ function renderAllCompanies() {
               </div>
               <div class="severity-legend">
                 ${severityBreakdown.map(s => `
-                  <div class="severity-legend-row">
+                  <div class="severity-legend-row" ${topCompany && s.count > 0 ? `onclick="goToVulnSeverity(${_jsArg(topCompany.id)},'${s.key}',event)" style="cursor:pointer" title="Ver vulnerabilidades ${esc(s.label)} no alvo de maior risco"` : ""}>
                     <div class="severity-legend-key">
                       <span class="severity-swatch" style="background:${s.color}"></span>
                       ${esc(s.label)}
@@ -1337,10 +1397,10 @@ function renderAllCompanies() {
         </div>
       </div>
       <div class="cc-track">
-        <div class="cc-track-item c"><span>Critical</span><b>${s.findings_critical||0}</b></div>
-        <div class="cc-track-item h"><span>High</span><b>${s.findings_high||0}</b></div>
-        <div class="cc-track-item m"><span>Medium</span><b>${s.findings_medium||0}</b></div>
-        <div class="cc-track-item i"><span>Info</span><b>${s.findings_info||0}</b></div>
+        <div class="cc-track-item c" onclick="goToVulnSeverity(${_jsArg(co.id)},'critical',event)" title="Ver vulnerabilidades Critical" style="cursor:pointer"><span>Critical</span><b>${s.findings_critical||0}</b></div>
+        <div class="cc-track-item h" onclick="goToVulnSeverity(${_jsArg(co.id)},'high',event)" title="Ver vulnerabilidades High" style="cursor:pointer"><span>High</span><b>${s.findings_high||0}</b></div>
+        <div class="cc-track-item m" onclick="goToVulnSeverity(${_jsArg(co.id)},'medium',event)" title="Ver vulnerabilidades Medium" style="cursor:pointer"><span>Medium</span><b>${s.findings_medium||0}</b></div>
+        <div class="cc-track-item i" onclick="goToVulnSeverity(${_jsArg(co.id)},'info',event)" title="Ver vulnerabilidades Info" style="cursor:pointer"><span>Info</span><b>${s.findings_info||0}</b></div>
         <div class="cc-track-item"><span>Hosts</span><b>${s.subdomains||0}</b></div>
         <div class="cc-track-item"><span>Live</span><b>${s.live_hosts||0}</b></div>
         <div class="cc-track-item"><span>WAF</span><b>${s.waf_protected||0}</b></div>
@@ -1892,6 +1952,157 @@ function renderFindingsTab(co) {
   return renderVulnsTab(co);
 }
 
+// ── Vulnerability intelligence: CWE / CVSS estimates / mitigation guidance ──
+const VULN_INTEL_RULES = [
+  { id:'sqli', re:/sql\s*injection|sqli/i, cwe:'CWE-89', cvss:9.8, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+    mitigation:[
+      'Use parameterized queries / prepared statements for all database access — never concatenate user input into SQL.',
+      'Apply the principle of least privilege to the database account used by the application.',
+      'Add input validation and an allow-list for expected formats (e.g. numeric IDs).',
+      'Deploy WAF rules as defense-in-depth, but do not rely on them as the primary fix.'
+    ]},
+  { id:'xss', re:/cross-site scripting|\bxss\b|reflected_xss|confirmed_xss|dom_xss|tainted_sink/i, cwe:'CWE-79', cvss:6.1, vector:'AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N',
+    mitigation:[
+      'Apply context-aware output encoding for all user-controlled data rendered in HTML, JS or attributes.',
+      'Adopt a strict Content-Security-Policy (script-src without unsafe-inline / unsafe-eval).',
+      'Use templating that auto-escapes output by default and avoid innerHTML / dangerouslySetInnerHTML with raw input.',
+      'Set HttpOnly and SameSite=Strict/Lax on session cookies to limit impact of injected scripts.'
+    ]},
+  { id:'idor', re:/idor|insecure direct object reference|potential_idor|broken access control/i, cwe:'CWE-639', cvss:6.5, vector:'AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N',
+    mitigation:[
+      'Enforce server-side authorization (ownership/tenant validation) on every object reference, not just authentication.',
+      'Avoid predictable/sequential identifiers — use UUIDs or an indirect reference map.',
+      'Centralize access-control logic in a middleware/policy layer instead of per-endpoint checks.',
+      'Add automated tests that attempt cross-tenant/cross-user access for every resource endpoint.'
+    ]},
+  { id:'open_redirect', re:/open redirect/i, cwe:'CWE-601', cvss:4.7, vector:'AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N',
+    mitigation:[
+      'Avoid passing full URLs in redirect parameters — use an allow-list of internal paths or indirect IDs.',
+      'If external redirects are required, validate the destination against a strict domain allow-list.',
+      'Show an interstitial warning page before redirecting to a different host.'
+    ]},
+  { id:'cors', re:/cors|cross-origin resource sharing/i, cwe:'CWE-942', cvss:7.5, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+    mitigation:[
+      'Never reflect the Origin header with Access-Control-Allow-Credentials: true.',
+      'Use a strict allow-list of trusted origins instead of a wildcard or reflected origin.',
+      'Separate APIs that require credentials from those intended to be public.'
+    ]},
+  { id:'takeover', re:/takeover|subdomain takeover|dangling/i, cwe:'CWE-350', cvss:7.5, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N',
+    mitigation:[
+      'Remove the dangling DNS record (CNAME/A) pointing at the deprovisioned service.',
+      'Re-claim the resource on the third-party provider if the subdomain is still needed.',
+      'Add monitoring that alerts when a CNAME target stops resolving or returns an "unclaimed" page.'
+    ]},
+  { id:'secret', re:/secret|api[\s_-]?key|credential|token leak|aws_key|private key/i, cwe:'CWE-798', cvss:9.1, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N',
+    mitigation:[
+      'Revoke and rotate the exposed credential immediately.',
+      'Purge the secret from source control history (git filter-repo / BFG) — rotation alone is not enough on a public repo.',
+      'Move secrets to a dedicated secrets manager and load via environment at runtime.',
+      'Add pre-commit/CI secret scanning (gitleaks, trufflehog) to prevent recurrence.'
+    ]},
+  { id:'graphql', re:/graphql/i, cwe:'CWE-200', cvss:5.3, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+    mitigation:[
+      'Disable GraphQL introspection in production.',
+      'Apply query depth/complexity limiting and rate limiting.',
+      'Ensure field-level authorization is enforced, not just at the query root.'
+    ]},
+  { id:'ssrf', re:/ssrf|server-side request forgery/i, cwe:'CWE-918', cvss:8.6, vector:'AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:L/A:N',
+    mitigation:[
+      'Validate and allow-list outbound destinations; block requests to internal/link-local/metadata ranges (169.254.169.254, RFC1918).',
+      'Use a dedicated egress proxy with strict allow-lists for server-side fetch functionality.',
+      'Disable unused URL schemes (file://, gopher://, dict://) in HTTP client libraries.'
+    ]},
+  { id:'ssti', re:/ssti|template injection/i, cwe:'CWE-1336', cvss:9.0, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+    mitigation:[
+      'Never render user input directly as a template string; use logic-less or sandboxed templates.',
+      'Apply strict input validation/escaping before passing data to the template engine.',
+      'Run the template renderer with the least privilege needed.'
+    ]},
+  { id:'headers', re:/missing.*header|x-frame-options|hsts|security headers|clickjack/i, cwe:'CWE-1021', cvss:4.3, vector:'AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:L/A:N',
+    mitigation:[
+      'Add X-Frame-Options: DENY (or CSP frame-ancestors), Strict-Transport-Security and X-Content-Type-Options: nosniff.',
+      'Adopt a baseline security-headers policy and verify it with automated checks.'
+    ]},
+  { id:'default_creds', re:/default credential|default password/i, cwe:'CWE-1392', cvss:9.8, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H',
+    mitigation:[
+      'Force a password change on first login and disable/rename default accounts.',
+      'Restrict admin panels to internal networks/VPN where possible.'
+    ]},
+  { id:'info_disclosure', re:/directory listing|information disclosure|exposed|stack trace|debug/i, cwe:'CWE-200', cvss:5.3, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N',
+    mitigation:[
+      'Disable directory listing and verbose error/debug output in production.',
+      'Review what is served from publicly accessible paths and remove sensitive files.'
+    ]},
+  { id:'xxe', re:/xxe|xml external entity/i, cwe:'CWE-611', cvss:7.5, vector:'AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N',
+    mitigation:[
+      'Disable DTD processing and external entity resolution in the XML parser.',
+      'Prefer less complex data formats (JSON) where possible.'
+    ]},
+];
+
+const VULN_INTEL_DEFAULT_MITIGATION = [
+  'Review the finding manually to confirm exploitability and business impact.',
+  'Apply input validation, output encoding and least-privilege access controls relevant to the affected component.',
+  'Re-test after remediation to confirm the issue is resolved.'
+];
+
+function _cvssSeverityLabel(score) {
+  if (score == null) return 'N/A';
+  if (score >= 9.0) return 'Critical';
+  if (score >= 7.0) return 'High';
+  if (score >= 4.0) return 'Medium';
+  if (score > 0) return 'Low';
+  return 'None';
+}
+
+function _vulnIntel(f) {
+  const text = [f.title, f.category, f.type, f.name, f.desc, f.description].filter(Boolean).join(' ');
+  const rule = VULN_INTEL_RULES.find(r => r.re.test(text));
+  if (rule) return rule;
+  const sevCvss = {critical:9.0, high:7.5, medium:5.3, low:3.1, info:0.0}[f.severity];
+  return {
+    id: 'generic',
+    cwe: 'CWE-200',
+    cvss: sevCvss != null ? sevCvss : 5.0,
+    vector: null,
+    mitigation: VULN_INTEL_DEFAULT_MITIGATION,
+  };
+}
+
+function _buildPocPreview(f, intel) {
+  const title = f.title || f.name || 'Security Finding';
+  const host = f.host || '';
+  const url = f.url || f.endpoint || '';
+  const desc = f.desc || f.description || '';
+  const cvssLine = intel.cvss != null
+    ? `${intel.cvss.toFixed(1)} (${_cvssSeverityLabel(intel.cvss)})` + (intel.vector ? ` — CVSS:3.1/${intel.vector}` : '')
+    : 'N/A';
+  return `## Summary
+${title} was identified on ${host || url}.
+
+## Vulnerability Details
+- **Affected asset:** ${url || host}
+- **Category:** ${f.category || f.type || 'N/A'}
+- **CWE:** ${intel.cwe}
+- **CVSS:** ${cvssLine}
+- **Severity:** ${(f.severity || 'info').toUpperCase()}
+
+## Description
+${desc || '[Describe the issue and how it was discovered]'}
+
+## Steps to Reproduce
+1. Navigate to ${url || host}
+2. [Describe the exact request/action that triggers the issue]
+3. Observe the resulting behavior described above
+
+## Impact
+[Describe what an attacker could achieve — data exposure, account takeover, lateral movement, etc.]
+
+## Recommended Mitigation
+${intel.mitigation.map(m => '- ' + m).join('\n')}
+`;
+}
+
 function _normalizeFindingTitle(title, host) {
   if (!title) return "?";
   let t = title;
@@ -1970,6 +2181,11 @@ function applyFindFilter(cid) {
     const triageKey = _hashId(normTitle, "", "");
     const triageStatus = (triageMap[triageKey] && triageMap[triageKey].status) || "open";
 
+    const intel = _vulnIntel(f0);
+    if (!window._findingIntelMap) window._findingIntelMap = {};
+    window._findingIntelMap[allHostsId] = { f: f0, intel };
+    const cvssLabel = intel.cvss != null ? `${intel.cvss.toFixed(1)} ${_cvssSeverityLabel(intel.cvss)}` : "N/A";
+
     return `<div class="fg-row" onclick="toggleFindGroupHosts('${allHostsId}')" style="cursor:pointer">
       <div class="fg-sev" style="background:${sevColors[topSev]}"></div>
       <div class="fg-main">
@@ -1977,6 +2193,8 @@ function applyFindFilter(cid) {
           <span class="fg-title">${esc(f0.title||normTitle)}</span>
           ${isMulti ? `<span class="fg-badge" style="background:${sevColors[topSev]}22;color:${sevColors[topSev]};border:1px solid ${sevColors[topSev]}44">${count} hosts</span>` : ""}
           <span style="color:var(--text3);font-size:.68rem;margin-left:4px">${esc(f0.category||"")}</span>
+          <span style="background:var(--card);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:.62rem;color:var(--text3);margin-left:4px" title="Estimated CWE">${esc(intel.cwe)}</span>
+          <span style="background:var(--card);border:1px solid var(--border);border-radius:4px;padding:1px 7px;font-size:.62rem;color:var(--text3)" title="Estimated CVSS 3.1">CVSS ${cvssLabel}</span>
           <select class="fi fg-triage-select fg-triage-${triageStatus}" onclick="event.stopPropagation()" onchange="event.stopPropagation();setFindingTriage('${esc(cid)}','${triageKey}',this.value)">
             ${Object.entries(FINDING_TRIAGE_LABELS).map(([val,lbl])=>`<option value="${val}" ${triageStatus===val?'selected':''}>${lbl}</option>`).join("")}
           </select>
@@ -1989,6 +2207,18 @@ function applyFindFilter(cid) {
           </div>
           <div style="margin-top:8px;font-size:.65rem;color:var(--text3)">
             Click any host to copy · ${esc(f0.desc||"").slice(0,200)}${(f0.desc||"").length>200?"…":""}
+          </div>
+          <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">
+            <div style="font-size:.65rem;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:6px">🛡 Mitigation recommendations</div>
+            <ul style="margin:0 0 8px 18px;padding:0;font-size:.72rem;color:var(--text2);line-height:1.5">
+              ${intel.mitigation.map(m=>`<li>${esc(m)}</li>`).join("")}
+            </ul>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+              <button class="btn btn-secondary" style="font-size:.65rem;padding:4px 10px" onclick="event.stopPropagation();_copyPocPreview('${allHostsId}')">📋 Copy PoC (HackerOne/Bugcrowd)</button>
+              <button class="btn btn-secondary" style="font-size:.65rem;padding:4px 10px" onclick="event.stopPropagation();_enrichFindingWithHermes('${esc(cid)}','${allHostsId}')" id="${allHostsId}-aibtn">✨ Enrich with Hermes AI</button>
+              <span style="font-size:.62rem;color:var(--text3)">CWE: ${esc(intel.cwe)} · CVSS 3.1: ${esc(cvssLabel)}${intel.vector ? ' ('+esc(intel.vector)+')' : ''} — estimates, confirm before reporting</span>
+            </div>
+            <div id="${allHostsId}-ai" style="display:none;margin-top:8px;padding:10px;background:var(--card);border:1px solid var(--border);border-radius:6px;font-size:.72rem;color:var(--text2);white-space:pre-wrap"></div>
           </div>
         </div>
       </div>
@@ -2009,6 +2239,51 @@ async function setFindingTriage(cid, findingKey, status) {
     });
   } catch(e) {}
   applyFindFilter(cid);
+}
+
+function _copyPocPreview(allHostsId) {
+  const entry = (window._findingIntelMap || {})[allHostsId];
+  if (!entry) return;
+  const text = _buildPocPreview(entry.f, entry.intel);
+  navigator.clipboard.writeText(text).then(() => {
+    showToast && showToast("PoC preview copiado para a área de transferência");
+  }).catch(() => {
+    showToast && showToast("Não foi possível copiar automaticamente");
+  });
+}
+
+async function _enrichFindingWithHermes(cid, allHostsId) {
+  const entry = (window._findingIntelMap || {})[allHostsId];
+  if (!entry) return;
+  const btn = document.getElementById(`${allHostsId}-aibtn`);
+  const out = document.getElementById(`${allHostsId}-ai`);
+  if (!out) return;
+  out.style.display = "block";
+  out.textContent = "Consultando Hermes AI...";
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await fetch(`/api/ai/enrich-finding`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', ..._authHeaders()},
+      body: JSON.stringify({
+        company_id: cid,
+        finding: {
+          title: entry.f.title, host: entry.f.host, url: entry.f.url || entry.f.endpoint,
+          category: entry.f.category, type: entry.f.type, severity: entry.f.severity,
+          desc: entry.f.desc || entry.f.description,
+          cwe: entry.intel.cwe, cvss: entry.intel.cvss, vector: entry.intel.vector,
+        },
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    out.textContent = data.text || "Sem resposta.";
+  } catch(e) {
+    out.textContent = "Falha ao consultar Hermes AI: " + String(e.message || e) +
+      "\n\nConfigure sua chave de API do Hermes/OpenRouter em Configurações → Threat Intelligence.";
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function toggleFindGroupHosts(elId) {
@@ -4737,17 +5012,6 @@ function renderFC(f) {
         ${fileUrl ? `<a class="fc-url-link" href="${esc(fileUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="font-size:.68rem">🔗 ${esc(fileUrl.slice(0,90))}${fileUrl.length>90?'…':''}</a>` : ''}
       </div>`;
     }
-    if (f.type === "phishing") {
-      const m = (f.desc||"").match(/Risk score:\s*(\d+)\/100/);
-      const score = m ? parseInt(m[1]) : null;
-      const indM  = (f.desc||"").match(/Indicators:\s*([^.]+)/);
-      const indicators = indM ? indM[1].trim().split(",").map(s=>s.trim()).filter(Boolean) : [];
-      const scoreColor = score >= 70 ? '#f43f5e' : score >= 40 ? '#fb923c' : 'var(--text2)';
-      return `<div style="font-size:.71rem;margin:6px 0 3px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${score != null ? `<span style="background:var(--sidebar);border:1px solid var(--border);border-radius:4px;padding:3px 8px">Risk: <b style="color:${scoreColor}">${score}/100</b></span>` : ''}
-        ${indicators.map(i=>`<span style="background:rgba(251,146,60,0.1);border:1px solid rgba(251,146,60,0.3);border-radius:4px;padding:2px 7px;color:#fb923c;font-size:.67rem">${esc(i)}</span>`).join('')}
-      </div>`;
-    }
     if (f.type === "attack_chain") {
       const m = (f.title||"").match(/(\d+)\s+finding/);
       const count = m ? parseInt(m[1]) : null;
@@ -4961,7 +5225,7 @@ const BBOT_HUD_PHASES = [
   {id:"validation", label:"VALIDATE", icon:"⌁", color:"#818cf8",
    mods:["dns","dns_brute","leaks"]},
   {id:"intel", label:"INTEL", icon:"⚡", color:"#fbbf24",
-   mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","phishing","dep_confusion"]},
+   mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","dep_confusion"]},
   {id:"web", label:"WEB/JS", icon:"⬡", color:"#4ade80",
    mods:["headers","waf","wappalyzer","whatweb","vendor_fp","service_version","favicon_hunt","js","js_endpoints","js_secrets","api_discovery_extra","graphql"]},
   {id:"browser", label:"BROWSER", icon:"▣", color:"#c084fc",
@@ -5870,6 +6134,28 @@ function showPage(page) {
     _syncSidebarActive();
     loadAdmins();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('admins');
+  } else if (page === "bbhelper") {
+    state.page = "bbhelper";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-bbhelper").classList.add("active");
+    _syncSidebarActive();
+    document.getElementById("crumb-sep").style.display = "";
+    document.getElementById("crumb-current").textContent = "Bug Bounty Helper";
+    if (typeof showBBHelperPage === 'function') showBBHelperPage();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('bbhelper');
+  } else if (page === "exttools") {
+    state.page = "exttools";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-exttools").classList.add("active");
+    _syncSidebarActive();
+    document.getElementById("crumb-sep").style.display = "";
+    document.getElementById("crumb-current").textContent = "External Tools";
+    if (typeof showExtToolsPage === 'function') showExtToolsPage();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('exttools');
   }
 }
 
@@ -6547,7 +6833,6 @@ function _renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, se
   const hosts = Array.isArray(co.hosts) ? co.hosts : [];
   const findings = Array.isArray(co.findings) ? co.findings : [];
   const cves = Array.isArray(co.cve_findings) ? co.cve_findings : [];
-  const phishing = Array.isArray(co.phishing_data?.findings) ? co.phishing_data.findings : [];
   const headerResults = Array.isArray(co.headers_data?.results) ? co.headers_data.results : [];
   const browserData = co.browser_recon_data || {};
   const browserCrawl = co.browser_crawl_data || {};
@@ -6574,7 +6859,6 @@ function _renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, se
     {name:"Runtime JS", count: runtimeJsUrls.length || Number(co.js_data?.runtime_js_count || 0), desc:`${runtimeNetwork.length} network calls · chunks/scripts`},
     {name:"JavaScript", count: Number(co.js_data?.js_files || 0), desc:`${co.js_data?.total_endpoints || 0} endpoints · ${co.js_data?.total_secrets || 0} secrets`},
     {name:"CVEs", count: cves.length, desc:`${co.cve_summary?.critical || 0} critical · ${co.cve_summary?.high || 0} high`},
-    {name:"Phishing", count: phishing.length, desc:`${co.phishing_data?.total_threats || 0} ameaças ativas`},
     {name:"DNSSEC", count: Array.isArray(co.dnssec_data?.findings) ? co.dnssec_data.findings.length : 0, desc:"Problemas DNSSEC detectados"},
     {name:"GitHub", count: Number(co.github_repos_data?.total_repos || 0), desc:"Repositorios e exposicoes"},
     {name:"Cloud", count: co.cloud_assets ? Object.keys(co.cloud_assets).length : 0, desc:"Providers inferidos por IP"},
@@ -6605,13 +6889,6 @@ function _renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, se
     <td>${esc(r.title || "")}</td>
     <td>${Array.isArray(r.observations) ? r.observations.length : 0}</td>
   </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Browser recon sem paginas persistidas.</td></tr>`;
-
-  const phishingRows = phishing.slice(0, 6).map(p => `<tr>
-    <td><span class="recon-sev" style="color:${_reconSevColor(p.severity)}">${esc(String(p.severity || "info").toUpperCase())}</span></td>
-    <td class="recon-mono">${esc(p.url || p.domain || "")}</td>
-    <td>${esc(p.title || p.type || "")}</td>
-    <td>${esc(p.risk_score ?? "")}</td>
-  </tr>`).join("") || `<tr><td colspan="4" class="recon-empty-row">Nenhum phishing lead.</td></tr>`;
 
   return `
     <div class="recon-kpi-grid">
@@ -6655,13 +6932,6 @@ function _renderReconEvidencePanel(co, shots, staticEndpoints, staticSecrets, se
         <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
           <thead><tr><th>URL</th><th>Status</th><th>Title</th><th>Obs</th></tr></thead>
           <tbody>${browserRows}</tbody>
-        </table></div></div>
-      </div>
-      <div>
-        <div class="recon-panel-title">Phishing / brand leads</div>
-        <div class="table-shell"><div class="tl-wrap"><table class="jobs-table compact-table">
-          <thead><tr><th>Risk</th><th>URL</th><th>Title</th><th>Score</th></tr></thead>
-          <tbody>${phishingRows}</tbody>
         </table></div></div>
       </div>
     </div>
@@ -7636,6 +7906,13 @@ const SETTINGS_SCHEMA = [
       {key:"fofa_key",            label:"FOFA API Key",            tag:"paid",     hint:"Paired with FOFA Email",                 signup:"https://fofa.info/userInfo"},
     ]
   },
+  { group:"AI / Hermes Agent", icon:"✨", desc:"Enriquecimento de findings (CVSS, CWE, mitigação e PoC) via Hermes Agent (Nous Research), self-hosted. Inicie o gateway com 'hermes gateway' e aponte para o host:porta dele — qualquer outro endpoint compatível com OpenAI chat/completions também funciona.",
+    fields:[
+      {key:"hermes_base_url",     label:"API Base URL",            tag:"optional", hint:"Padrão: http://127.0.0.1:8642/v1 (endereço do seu 'hermes gateway' local, endpoint OpenAI-compatible /chat/completions)"},
+      {key:"hermes_api_key",      label:"API Server Key", tag:"optional",  hint:"Bearer token (API_SERVER_KEY) do gateway, se ele exigir autenticação. Deixe vazio se o gateway local não exigir chave."},
+      {key:"hermes_model",        label:"Modelo",                  tag:"optional", hint:"Padrão: hermes-agent (nome cosmético — o gateway usa o modelo do profile configurado)"},
+    ]
+  },
 ];
 
 // ── Runtime Config Schema (separate ⚡ Performance page) ──
@@ -7882,6 +8159,7 @@ async function loadSettings() {
   renderSettingsGrid();
   document.getElementById("settings-save-status").textContent = "Settings loaded from server";
   document.getElementById("settings-save-status").className = "save-status ok";
+  loadWebhooks();
 }
 
 async function saveSettings() {
@@ -7898,6 +8176,148 @@ async function saveSettings() {
     if (r.ok) { st.textContent = "✓ Settings saved"; st.className="save-status ok"; }
     else { st.textContent = "Error saving settings"; st.className="save-status err"; }
   } catch(e) { st.textContent = "Connection error"; st.className="save-status err"; }
+}
+
+// ── Notifications / Webhooks (Telegram, Discord, Slack, WhatsApp, Signal, Email, CLI) ──
+
+const WEBHOOK_TYPES = {
+  telegram: { label: "Telegram", fields: [
+      {key:"bot_token", label:"Bot Token", placeholder:"123456:ABC-DEF..."},
+      {key:"chat_id",   label:"Chat ID",   placeholder:"-100123456789"},
+    ]},
+  discord: { label: "Discord", fields: [
+      {key:"url", label:"Webhook URL", placeholder:"https://discord.com/api/webhooks/..."},
+    ]},
+  slack: { label: "Slack", fields: [
+      {key:"url", label:"Webhook URL", placeholder:"https://hooks.slack.com/services/..."},
+    ]},
+  whatsapp: { label: "WhatsApp (Twilio)", fields: [
+      {key:"account_sid", label:"Account SID"},
+      {key:"auth_token",  label:"Auth Token"},
+      {key:"from",        label:"From", placeholder:"whatsapp:+14155238886"},
+      {key:"to",          label:"To",   placeholder:"whatsapp:+5511999999999"},
+    ]},
+  signal: { label: "Signal (signal-cli-rest-api)", fields: [
+      {key:"url",        label:"API Base URL", placeholder:"http://localhost:8080"},
+      {key:"number",     label:"Número remetente", placeholder:"+5511999999999"},
+      {key:"recipients", label:"Destinatários (separados por vírgula)"},
+    ]},
+  email: { label: "Email (usa SMTP de Configurações)", fields: [
+      {key:"to", label:"Destinatário", placeholder:"security@empresa.com"},
+    ]},
+  cli: { label: "CLI (feed local data/cli_notifications.jsonl)", fields: [] },
+  generic: { label: "Webhook genérico (JSON POST)", fields: [
+      {key:"url", label:"URL"},
+    ]},
+};
+
+const WEBHOOK_EVENTS = [
+  {key:"scan_complete",    label:"Scan finalizado"},
+  {key:"critical_finding", label:"Finding crítico"},
+];
+
+let _webhooksData = [];
+
+async function loadWebhooks() {
+  if (!SERVER_MODE) { renderWebhooksPanel(); return; }
+  try {
+    const r = await fetch("/api/webhooks", {headers:_authHeaders()});
+    if (r.ok) _webhooksData = await r.json();
+  } catch(e) {}
+  renderWebhooksPanel();
+}
+
+function renderWebhookFormFields() {
+  const type = document.getElementById("wh-new-type")?.value || "generic";
+  const def = WEBHOOK_TYPES[type] || WEBHOOK_TYPES.generic;
+  const fields = document.getElementById("wh-new-fields");
+  if (fields) {
+    fields.innerHTML = def.fields.map(f => `
+    <div class="sg-field">
+      <div class="sg-label"><span>${f.label}</span></div>
+      <input type="text" class="sg-input" id="wh-new-${f.key}" placeholder="${esc(f.placeholder||"")}">
+    </div>`).join("") || `<div class="sg-desc">Nenhuma configuração adicional necessária.</div>`;
+  }
+  const events = document.getElementById("wh-new-events");
+  if (events) {
+    events.innerHTML = WEBHOOK_EVENTS.map(e => `
+    <label style="display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+      <input type="checkbox" class="wh-new-event" value="${e.key}" checked> ${e.label}
+    </label>`).join("");
+  }
+}
+
+function renderWebhooksPanel() {
+  const typeSel = document.getElementById("wh-new-type");
+  if (typeSel && !typeSel.options.length) {
+    typeSel.innerHTML = Object.entries(WEBHOOK_TYPES).map(([k,v]) => `<option value="${k}">${esc(v.label)}</option>`).join("");
+    renderWebhookFormFields();
+  }
+
+  const list = document.getElementById("webhooks-list");
+  if (!list) return;
+  if (!_webhooksData.length) {
+    list.innerHTML = `<div class="sg-desc">Nenhum webhook configurado ainda.</div>`;
+    return;
+  }
+  list.innerHTML = _webhooksData.map((hook, idx) => {
+    const def = WEBHOOK_TYPES[hook.type] || WEBHOOK_TYPES.generic;
+    const target = hook.chat_id || hook.to || hook.url || hook.number || "(sem destino)";
+    const events = (hook.events || []).map(e => (WEBHOOK_EVENTS.find(x=>x.key===e)||{label:e}).label).join(", ") || "todos os eventos";
+    return `
+  <div class="sg-field" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+    <div>
+      <strong>${esc(def.label)}</strong> — <span style="color:var(--text3)">${esc(String(target))}</span>
+      <div class="sg-desc" style="margin:2px 0 0;">Eventos: ${esc(events)}</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-secondary" onclick="testWebhook(${idx})">🔔 Testar</button>
+      <button class="btn btn-secondary" onclick="deleteWebhook(${idx})">🗑 Remover</button>
+    </div>
+  </div>`;
+  }).join("");
+}
+
+async function _saveWebhooks() {
+  const st = document.getElementById("webhooks-save-status");
+  try {
+    const r = await fetch("/api/webhooks", {method:"POST", body:JSON.stringify(_webhooksData), headers:_authHeaders()});
+    if (r.ok) { if (st) { st.textContent = "✓ Salvo"; st.className = "save-status ok"; } }
+    else { if (st) { st.textContent = "Erro ao salvar"; st.className = "save-status err"; } }
+  } catch(e) { if (st) { st.textContent = "Erro de conexão"; st.className = "save-status err"; } }
+}
+
+function addWebhook() {
+  const type = document.getElementById("wh-new-type")?.value || "generic";
+  const def = WEBHOOK_TYPES[type] || WEBHOOK_TYPES.generic;
+  const hook = {id: "wh_" + Math.random().toString(36).slice(2,10), type};
+  def.fields.forEach(f => {
+    const el = document.getElementById("wh-new-" + f.key);
+    let val = el ? el.value.trim() : "";
+    if (f.key === "recipients" && val) val = val.split(",").map(s=>s.trim()).filter(Boolean);
+    if (val) hook[f.key] = val;
+  });
+  hook.events = Array.from(document.querySelectorAll(".wh-new-event:checked")).map(c => c.value);
+  if (!hook.events.length) { alert("Selecione ao menos um evento."); return; }
+  _webhooksData.push(hook);
+  renderWebhooksPanel();
+  _saveWebhooks();
+  def.fields.forEach(f => { const el = document.getElementById("wh-new-" + f.key); if (el) el.value = ""; });
+}
+
+function deleteWebhook(idx) {
+  _webhooksData.splice(idx, 1);
+  renderWebhooksPanel();
+  _saveWebhooks();
+}
+
+async function testWebhook(idx) {
+  const hook = _webhooksData[idx];
+  try {
+    const r = await fetch("/api/webhooks/test", {method:"POST", body:JSON.stringify({hook}), headers:_authHeaders()});
+    if (r.ok) alert("Teste enviado — verifique o canal configurado.");
+    else alert("Falha ao enviar teste.");
+  } catch(e) { alert("Erro de conexão: " + e.message); }
 }
 
 function _toolMatchesFilter(tool, categoryFilter, availFilter) {
@@ -8264,7 +8684,7 @@ const _phudParticles = {};  // Track animation frames
 const PIPELINE_PHASES_DEF = [
   {id:"discovery",    label:"DISCOVERY",       icon:"🛰",  color:"#00e5ff", mods:["subfinder","assetfinder","certs","alienvault_otx","urlscan_io","rapiddns","hackertarget","github_subdomains","wayback","urlfinder"]},
   {id:"validation",   label:"VALIDAÇÃO",       icon:"🔍",  color:"#818cf8", mods:["dns","dns_brute","leaks"]},
-  {id:"intel",        label:"INTEL",           icon:"⚡",  color:"#fbbf24", mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","phishing","dep_confusion"]},
+  {id:"intel",        label:"INTEL",           icon:"⚡",  color:"#fbbf24", mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","dep_confusion"]},
   {id:"fingerprint",  label:"FINGERPRINT",     icon:"🔬",  color:"#00e5ff", mods:["headers","waf","wappalyzer","whatweb","vendor_fp","service_version","favicon_hunt","screenshot","gowitness"]},
   {id:"api_mapping",  label:"JS/API",          icon:"⬡",  color:"#4ade80", mods:["js","js_endpoints","js_secrets","api_discovery_extra","graphql"]},
   {id:"browser",      label:"PLAYWRIGHT",      icon:"▣",  color:"#c084fc", mods:["browser_crawl","browser_recon"]},
@@ -9156,9 +9576,9 @@ async function renderVulnsTab(co) {
 
   if (findings.length) {
     html += `<div class="findings-summary">
-      ${_severityCard("critical", summaryCards.critical)}
-      ${_severityCard("high", summaryCards.high)}
-      ${_severityCard("medium", summaryCards.medium)}
+      ${_severityCard("critical", summaryCards.critical, co.id)}
+      ${_severityCard("high", summaryCards.high, co.id)}
+      ${_severityCard("medium", summaryCards.medium, co.id)}
     </div>`;
     html += `<div class="filter-bar">
       <input type="text" class="fi grow" id="f-search" placeholder="Search confirmed vulns, hosts, descriptions..." oninput='applyFindFilter(${cidJs})'>

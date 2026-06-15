@@ -297,6 +297,23 @@ body.nav-open .mobile-nav-backdrop { opacity:1; pointer-events:auto; }
 .pulse { width:5px; height:5px; border-radius:50%; background:currentColor; animation:pulse 2s infinite; }
 @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
 
+.topbar-scan-progress {
+  display:flex; align-items:center; gap:8px; padding:4px 12px; border-radius:999px;
+  font-size:0.7rem; font-weight:600; white-space:nowrap; cursor:pointer;
+  background:rgba(0,201,167,.08); border:1px solid rgba(0,201,167,.22); color:var(--teal);
+  transition:background .12s;
+}
+.topbar-scan-progress:hover { background:rgba(0,201,167,.16); }
+.topbar-scan-progress .tsp-bar {
+  width:60px; height:4px; border-radius:2px; background:rgba(255,255,255,.08); overflow:hidden; flex:none;
+}
+.topbar-scan-progress .tsp-bar > span {
+  display:block; height:100%; background:var(--teal); transition:width .4s ease;
+}
+@media (max-width: 900px) {
+  .topbar-scan-progress .tsp-label { display:none; }
+}
+
 /* ── CONTENT ── */
 .content {
   flex:1; overflow-y:auto; padding:24px 24px 36px; -webkit-overflow-scrolling:touch;
@@ -1683,6 +1700,13 @@ html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ss-empty .ss-empty-icon { font-size:3rem; margin-bottom:12px; }
 .ss-empty h3 { font-size:1rem; color:var(--text2); margin-bottom:6px; }
 .ss-empty p  { font-size:0.78rem; }
+
+/* ── BUG BOUNTY HELPER / EXTERNAL TOOLS ── */
+.bbh-card {
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:12px 14px; transition:border-color .15s, background .15s; cursor:pointer;
+}
+.bbh-card:hover { border-color:var(--teal); background:rgba(0,201,167,0.05); }
 
 /* ── TOOLS PAGE ── */
 .tool-card {
