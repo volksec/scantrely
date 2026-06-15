@@ -132,7 +132,8 @@ def create_core_blueprint(
             "role": admin["role"],
             "scoped_companies": scoped_companies,
         })
-        resp.set_cookie("asm_token", token, max_age=session_ttl, httponly=True, samesite="Lax")
+        resp.set_cookie("asm_token", token, max_age=session_ttl, httponly=True,
+                        samesite="Lax", secure=request.is_secure)
         return resp
 
     @bp.route("/api/auth/logout", methods=["POST"])

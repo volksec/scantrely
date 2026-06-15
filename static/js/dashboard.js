@@ -653,25 +653,25 @@ function exportHTMLReport(co) {
     findings.filter(f=>f.severity===sev).map(f => `
       <tr>
         <td><span style="background:${sev==='critical'?'#ef4444':sev==='high'?'#f97316':sev==='medium'?'#eab308':sev==='low'?'#3b82f6':'#6b7280'};color:#fff;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700">${sev.toUpperCase()}</span></td>
-        <td style="font-weight:600">${f.title||''}</td>
-        <td>${f.host||''}</td>
-        <td>${f.category||f.type||''}</td>
-        <td style="font-size:11px;max-width:300px;word-break:break-word">${f.desc||''}</td>
+        <td style="font-weight:600">${esc(f.title||'')}</td>
+        <td>${esc(f.host||'')}</td>
+        <td>${esc(f.category||f.type||'')}</td>
+        <td style="font-size:11px;max-width:300px;word-break:break-word">${esc(f.desc||'')}</td>
       </tr>`)
   ).join('');
 
   const hostsHTML = hosts.slice(0,200).map(h => `
     <tr>
-      <td style="font-family:monospace">${h.host||''}</td>
-      <td>${h.ip||''}</td>
-      <td>${h.status_code||''}</td>
-      <td>${h.title||''}</td>
-      <td>${h.waf||'Direct'}</td>
-      <td style="font-size:11px">${(h.techs||[]).slice(0,5).join(', ')}</td>
+      <td style="font-family:monospace">${esc(h.host||'')}</td>
+      <td>${esc(h.ip||'')}</td>
+      <td>${esc(h.status_code||'')}</td>
+      <td>${esc(h.title||'')}</td>
+      <td>${esc(h.waf||'Direct')}</td>
+      <td style="font-size:11px">${esc((h.techs||[]).slice(0,5).join(', '))}</td>
     </tr>`).join('');
 
   const attackChains = findings.filter(f=>f.type==='attack_chain');
-  const attackHTML = attackChains.map(f=>`<li><strong>${f.title}</strong> — ${f.desc}</li>`).join('') || '<li>No attack chains identified</li>';
+  const attackHTML = attackChains.map(f=>`<li><strong>${esc(f.title||'')}</strong> — ${esc(f.desc||'')}</li>`).join('') || '<li>No attack chains identified</li>';
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -7896,8 +7896,8 @@ function openAdminModal(id, username, email, role, scopedJson) {
   grid.innerHTML = (allCompanies() || []).map(c => {
     const checked = scoped.includes(c.id) ? "checked" : "";
     return `<label style="display:flex;align-items:center;gap:6px;font-size:0.72rem;color:var(--text2);cursor:pointer;padding:2px 4px;border-radius:4px">
-      <input type="checkbox" value="${c.id}" ${checked} class="admin-scope-cb">
-      ${c.name}
+      <input type="checkbox" value="${esc(c.id)}" ${checked} class="admin-scope-cb">
+      ${esc(c.name)}
     </label>`;
   }).join("") || '<span style="color:var(--text3);font-size:0.72rem">No companies yet</span>';
 
@@ -8243,8 +8243,8 @@ function renderCleanupResults(data) {
       <div style="font-size:.7rem;font-weight:600;color:var(--green);margin-bottom:6px">🧹 Subdomains removed (${data.removed.length})</div>
       <div style="display:flex;flex-direction:column;gap:3px">
         ${removed.map(r => `<div style="font-size:.67rem;color:var(--text2);display:flex;gap:8px;padding:1px 0">
-          <span style="color:var(--text3);min-width:90px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis">${r.host}</span>
-          <span style="color:var(--orange)">${r.reason}</span>
+          <span style="color:var(--text3);min-width:90px;font-family:var(--mono);overflow:hidden;text-overflow:ellipsis">${esc(r.host)}</span>
+          <span style="color:var(--orange)">${esc(r.reason)}</span>
         </div>`).join("")}
         ${more > 0 ? `<div style="font-size:.65rem;color:var(--text3);padding-top:2px">… and ${more} more</div>` : ""}
       </div>
@@ -9003,7 +9003,7 @@ async function runTool(name){
             res.innerHTML = `<div style="color:var(--text3);margin-bottom:4px">${findings.length} findings · ${pd.duration?.toFixed(1)||"?"}s</div>` +
               findings.slice(0,50).map(f=>{
                 const c = SEV_COLOR[f.severity]||"var(--text2)";
-                return `<div class="f-line"><span style="color:${c};font-weight:600">[${f.type}]</span> ${f.value}${f.port?" :"+f.port:""}</div>`;
+                return `<div class="f-line"><span style="color:${c};font-weight:600">[${esc(f.type)}]</span> ${esc(f.value)}${f.port?" :"+esc(String(f.port)):""}</div>`;
               }).join("") +
               (findings.length > 50 ? `<div style="color:var(--text3)">… and ${findings.length-50} more</div>` : "");
           }
