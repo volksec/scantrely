@@ -119,6 +119,9 @@
       <span class="sep" id="crumb-sep" style="display:none">/</span>
       <span class="current" id="crumb-current"></span>
     </div>
+    <button class="topbar-search-btn" onclick="openGlobalSearch()" title="Busca global (Ctrl+K)">
+      🔍 <span class="topbar-search-label">Buscar...</span><span class="topbar-search-kbd">Ctrl+K</span>
+    </button>
     <div class="topbar-space"></div>
     <div id="topbar-pill"></div>
     
@@ -160,6 +163,8 @@
                   onclick="openEditCompanyModal(state.currentId)" title="Edit scope">✏ Editar Escopo</button>
           <button class="btn btn-secondary" style="font-size:.72rem;padding:5px 12px"
                   onclick="exportHTMLReport(allCompanies().find(c=>c.id===state.currentId))" title="Export HTML report">📄 Exportar Relatório</button>
+          <button class="btn btn-secondary" style="font-size:.72rem;padding:5px 12px"
+                  onclick="exportPDFReport(allCompanies().find(c=>c.id===state.currentId))" title="Export PDF report">🖨 Exportar PDF</button>
           <button id="clear-data-btn" class="btn btn-secondary" style="font-size:.72rem;padding:5px 12px;color:var(--red)"
                   onclick="clearReconData(state.currentId)" title="Clear all scan findings from DB">🗑 Limpar Dados</button>
         </div>
@@ -670,12 +675,21 @@
   </div>
 </div>
 
+<!-- ── Global Search (Ctrl+K) ── -->
+<div class="modal-overlay gsearch-overlay" id="modal-global-search" onclick="if(event.target===this)closeGlobalSearch()">
+  <div class="modal gsearch-modal">
+    <input type="text" id="gsearch-input" class="gsearch-input" placeholder="Buscar empresas, hosts, dominios, findings... (Ctrl+K)" autocomplete="off" oninput="onGlobalSearchInput()" onkeydown="onGlobalSearchKeydown(event)">
+    <div id="gsearch-results" class="gsearch-results"></div>
+    <div class="gsearch-hint">↑↓ navegar · Enter abrir · Esc fechar</div>
+  </div>
+</div>
+
 <!-- ── Core modules ── -->
 <script src="js/asm.js"></script>
 <script src="js/api.js"></script>
 
 <!-- ── Optional: load generated data from parser ── -->
-<script src="dashboard.js?v=50"></script>
+<script src="dashboard.js?v=52"></script>
 
 </body>
 </html>

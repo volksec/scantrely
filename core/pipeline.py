@@ -3817,6 +3817,13 @@ class ReconRunner:
             log(f"  ↳ Screenshots disco: erro ignorado ({e})")
         log(f"  ↳ [persist] Salvando no banco...")
 
+        # ── Cloud storage bucket exposure (S3/Azure Blob/GCS) ─────────────────────
+        cloud_data = _result("cloud")
+        if cloud_data.get("findings"):
+            co_data["cloud_buckets"] = cloud_data
+            pub = cloud_data.get("public_count", 0)
+            log(f"  ↳ Cloud buckets: {len(cloud_data['findings'])} encontrados · {pub} públicos")
+
         # ── Favicon hash / Shodan icon matching ───────────────────────────────────
         fav_data = _result("favicon_hunt")
         if fav_data.get("matches") or fav_data.get("findings"):

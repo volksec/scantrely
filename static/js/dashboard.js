@@ -635,8 +635,7 @@ function startCompanyPipelineSync(companyId) {
   }, 4000);
 }
 
-function exportHTMLReport(co) {
-  if (!co) return;
+function _buildReportHTML(co) {
   const findings = co.findings || [];
   const hosts = co.hosts || [];
   const now = new Date().toLocaleString('pt-BR');
@@ -751,12 +750,31 @@ function exportHTMLReport(co) {
 </body>
 </html>`;
 
+  return html;
+}
+
+function exportHTMLReport(co) {
+  if (!co) return;
+  const html = _buildReportHTML(co);
   const blob = new Blob([html], {type: 'text/html'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `asm-report-${(co.id||'target').replace(/[^a-z0-9]/gi,'-')}-${new Date().toISOString().slice(0,10)}.html`;
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+function exportPDFReport(co) {
+  if (!co) return;
+  const html = _buildReportHTML(co);
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-up bloqueado. Permita pop-ups para exportar em PDF.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.onload = () => { win.focus(); win.print(); };
+  // Fallback in case onload doesn't fire (already-loaded blank doc)
+  setTimeout(() => { try { win.focus(); win.print(); } catch(e) {} }, 600);
 }
 
 function renderCompanyView(co) {
@@ -1505,6 +1523,177 @@ document.addEventListener('keydown', function(e) {
   } catch(ex) {}
 });
 
+// ════════════════════════════════════════════════════════════════════════
+//  GLOBAL SEARCH (Ctrl+K)
+// ════════════════════════════════════════════════════════════════════════
+let _gsearchActiveIdx = -1;
+let _gsearchResults = [];
+
+document.addEventListener('keydown', function(e) {
+  try {
+    const k = (e.key || '').toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'k') {
+      e.preventDefault();
+      openGlobalSearch();
+      return;
+    }
+    if (k === 'escape') {
+      const overlay = document.getElementById('modal-global-search');
+      if (overlay && overlay.classList.contains('show')) closeGlobalSearch();
+    }
+  } catch(ex) {}
+});
+
+function openGlobalSearch() {
+  const overlay = document.getElementById('modal-global-search');
+  if (!overlay) return;
+  overlay.classList.add('show');
+  _gsearchActiveIdx = -1;
+  const input = document.getElementById('gsearch-input');
+  input.value = '';
+  document.getElementById('gsearch-results').innerHTML = '';
+  setTimeout(() => input.focus(), 30);
+}
+
+function closeGlobalSearch() {
+  const overlay = document.getElementById('modal-global-search');
+  if (overlay) overlay.classList.remove('show');
+}
+
+function onGlobalSearchInput() {
+  const q = (document.getElementById('gsearch-input').value || '').trim();
+  _gsearchActiveIdx = -1;
+  if (q.length < 2) {
+    document.getElementById('gsearch-results').innerHTML = q
+      ? `<div class="gsearch-empty">Digite ao menos 2 caracteres...</div>`
+      : '';
+    _gsearchResults = [];
+    return;
+  }
+  _gsearchResults = performGlobalSearch(q);
+  renderGlobalSearchResults(_gsearchResults);
+}
+
+function performGlobalSearch(query) {
+  const q = query.toLowerCase();
+  const results = [];
+  const MAX_PER_GROUP = 8;
+
+  for (const co of allCompanies()) {
+    if ((co.name || '').toLowerCase().includes(q) || (co.id || '').toLowerCase().includes(q)) {
+      results.push({
+        group: 'Empresas', icon: '🏢', title: co.name || co.id,
+        sub: co.id, action: { type: 'company', cid: co.id },
+      });
+    }
+
+    for (const dom of (co.domains || [])) {
+      if (results.filter(r => r.group === 'Domínios').length >= MAX_PER_GROUP) break;
+      if ((dom || '').toLowerCase().includes(q)) {
+        results.push({
+          group: 'Domínios', icon: '🌐', title: dom, sub: co.name || co.id,
+          action: { type: 'company', cid: co.id, group: 'hosts' },
+        });
+      }
+    }
+
+    for (const h of (co.hosts || [])) {
+      if (results.filter(r => r.group === 'Hosts').length >= MAX_PER_GROUP) break;
+      const hay = `${h.host || ''} ${h.ip || ''} ${h.title || ''}`.toLowerCase();
+      if (hay.includes(q)) {
+        results.push({
+          group: 'Hosts', icon: '🖥', title: h.host || h.ip || '',
+          sub: `${co.name || co.id}${h.ip ? ' · ' + h.ip : ''}${h.status_code ? ' · HTTP ' + h.status_code : ''}`,
+          action: { type: 'company', cid: co.id, group: 'hosts' },
+        });
+      }
+    }
+
+    for (const d of (co.email_details || []).length ? co.email_details : (co.emails || []).map(e => ({email: e}))) {
+      if (results.filter(r => r.group === 'Pessoas').length >= MAX_PER_GROUP) break;
+      const name = [d.first_name, d.last_name].filter(Boolean).join(' ');
+      const hay = `${d.email || ''} ${name} ${d.position || ''}`.toLowerCase();
+      if (hay.includes(q)) {
+        results.push({
+          group: 'Pessoas', icon: '👤', title: d.email || '', sub: `${name || co.name || co.id}${d.position ? ' · ' + d.position : ''}`,
+          action: { type: 'company', cid: co.id, group: 'infragroup' },
+        });
+      }
+    }
+
+    for (const f of (co.findings || [])) {
+      if (results.filter(r => r.group === 'Findings').length >= MAX_PER_GROUP) break;
+      const hay = `${f.title || ''} ${f.host || ''} ${f.desc || ''} ${f.category || f.type || ''}`.toLowerCase();
+      if (hay.includes(q)) {
+        results.push({
+          group: 'Findings', icon: '⚠', title: f.title || '', tag: f.severity || '',
+          sub: `${co.name || co.id}${f.host ? ' · ' + f.host : ''}`,
+          action: { type: 'company', cid: co.id, group: 'operation' },
+        });
+      }
+    }
+  }
+
+  return results.slice(0, 60);
+}
+
+function renderGlobalSearchResults(results) {
+  const el = document.getElementById('gsearch-results');
+  if (!results.length) {
+    el.innerHTML = `<div class="gsearch-empty">Nenhum resultado encontrado</div>`;
+    return;
+  }
+  let html = '';
+  let lastGroup = null;
+  results.forEach((r, i) => {
+    if (r.group !== lastGroup) {
+      html += `<div class="gsearch-group-label">${esc(r.group)}</div>`;
+      lastGroup = r.group;
+    }
+    html += `<div class="gsearch-item" data-idx="${i}" onclick="selectGlobalSearchResult(${i})">
+      <div class="gsearch-item-icon">${r.icon}</div>
+      <div class="gsearch-item-main">
+        <div class="gsearch-item-title">${esc(r.title)}</div>
+        <div class="gsearch-item-sub">${esc(r.sub || '')}</div>
+      </div>
+      ${r.tag ? `<div class="gsearch-item-tag">${esc(r.tag)}</div>` : ''}
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function onGlobalSearchKeydown(e) {
+  const k = e.key;
+  if (k === 'ArrowDown' || k === 'ArrowUp') {
+    e.preventDefault();
+    if (!_gsearchResults.length) return;
+    if (k === 'ArrowDown') _gsearchActiveIdx = Math.min(_gsearchActiveIdx + 1, _gsearchResults.length - 1);
+    else _gsearchActiveIdx = Math.max(_gsearchActiveIdx - 1, 0);
+    document.querySelectorAll('#gsearch-results .gsearch-item').forEach((it, i) => {
+      it.classList.toggle('active', i === _gsearchActiveIdx);
+      if (i === _gsearchActiveIdx) it.scrollIntoView({ block: 'nearest' });
+    });
+  } else if (k === 'Enter') {
+    e.preventDefault();
+    const idx = _gsearchActiveIdx >= 0 ? _gsearchActiveIdx : 0;
+    if (_gsearchResults[idx]) selectGlobalSearchResult(idx);
+  }
+}
+
+async function selectGlobalSearchResult(idx) {
+  const r = _gsearchResults[idx];
+  if (!r) return;
+  closeGlobalSearch();
+  const action = r.action;
+  if (action.type === 'company') {
+    await selectCompany(action.cid);
+    if (action.group) {
+      const btn = document.querySelector(`.tab-btn[data-group="${action.group}"]`);
+      if (btn) switchGroup(action.group, btn);
+    }
+  }
+}
+
 function _renderRiskGauge(crit, high, med, info, total) {
   const r = 44, stroke = 5, circ = 2 * Math.PI * r;
   const score = total > 0 ? Math.round((crit * 4 + high * 3 + med * 2 + info) / (total * 4) * 100) : 0;
@@ -1711,11 +1900,17 @@ function _normalizeFindingTitle(title, host) {
   return t;
 }
 
+const FINDING_TRIAGE_LABELS = {
+  open: "Aberto", in_progress: "Em progresso", fixed: "Corrigido", accepted_risk: "Risco aceito",
+};
+
 function applyFindFilter(cid) {
   const co = allCompanies().find(c=>c.id===cid); if(!co) return;
   const q       = document.getElementById("f-search")?.value.toLowerCase()||"";
   const sev     = document.getElementById("f-sev")?.value||"";
   const cat     = document.getElementById("f-cat")?.value||"";
+  const triageFilter = document.getElementById("f-triage")?.value||"";
+  const triageMap = (window._triageMap && window._triageMap[cid]) || {};
   const filtered = _confirmedVulnFindings(co.findings||[]).filter(f=>{
     const ms = !q||[f.title,f.host,f.desc||f.description,f.category].join(" ").toLowerCase().includes(q);
     return ms && (!sev||f.severity===sev) && (!cat||f.category===cat);
@@ -1729,16 +1924,27 @@ function applyFindFilter(cid) {
     groups.get(key).findings.push(f);
   });
 
+  // Apply triage status filter at group level
+  let entries = [...groups.entries()];
+  if (triageFilter) {
+    entries = entries.filter(([normTitle]) => {
+      const triageKey = _hashId(normTitle, "", "");
+      const status = (triageMap[triageKey] && triageMap[triageKey].status) || "open";
+      return status === triageFilter;
+    });
+  }
+
   const list  = document.getElementById("f-list");
   const empty = document.getElementById("f-empty");
   const cnt   = document.getElementById("f-cnt");
-  if(cnt) cnt.textContent = filtered.length+" findings · "+groups.size+" unique issues";
-  if(!filtered.length){ list.innerHTML=""; empty.style.display="block"; return; }
+  const filteredCount = entries.reduce((n,[,g])=>n+g.findings.length, 0);
+  if(cnt) cnt.textContent = filteredCount+" findings · "+entries.length+" unique issues";
+  if(!entries.length){ list.innerHTML=""; empty.style.display="block"; return; }
   empty.style.display="none";
 
   // Sort groups: most hosts first, then by highest severity
   const sevRank = {critical:0, high:1, medium:2, low:3, info:4};
-  const sortedGroups = [...groups.entries()].sort((a,b) => {
+  const sortedGroups = entries.sort((a,b) => {
     const maxSevA = Math.min(...a[1].findings.map(f=>sevRank[f.severity]||4));
     const maxSevB = Math.min(...b[1].findings.map(f=>sevRank[f.severity]||4));
     if (maxSevA !== maxSevB) return maxSevA - maxSevB;
@@ -1760,6 +1966,8 @@ function applyFindFilter(cid) {
       : hosts.slice(0,5).map(h=>`<code class="fg-host-chip">${esc(h)}</code>`).join(" ") + ` <span style="color:var(--text3);font-size:.68rem">+${hosts.length-5} more</span>`;
 
     const allHostsId = `fg-hosts-${_hashId(normTitle, "", "")}`;
+    const triageKey = _hashId(normTitle, "", "");
+    const triageStatus = (triageMap[triageKey] && triageMap[triageKey].status) || "open";
 
     return `<div class="fg-row" onclick="toggleFindGroupHosts('${allHostsId}')" style="cursor:pointer">
       <div class="fg-sev" style="background:${sevColors[topSev]}"></div>
@@ -1768,6 +1976,9 @@ function applyFindFilter(cid) {
           <span class="fg-title">${esc(f0.title||normTitle)}</span>
           ${isMulti ? `<span class="fg-badge" style="background:${sevColors[topSev]}22;color:${sevColors[topSev]};border:1px solid ${sevColors[topSev]}44">${count} hosts</span>` : ""}
           <span style="color:var(--text3);font-size:.68rem;margin-left:4px">${esc(f0.category||"")}</span>
+          <select class="fi fg-triage-select fg-triage-${triageStatus}" onclick="event.stopPropagation()" onchange="event.stopPropagation();setFindingTriage('${esc(cid)}','${triageKey}',this.value)">
+            ${Object.entries(FINDING_TRIAGE_LABELS).map(([val,lbl])=>`<option value="${val}" ${triageStatus===val?'selected':''}>${lbl}</option>`).join("")}
+          </select>
         </div>
         <div class="fg-hosts-preview">${hostPreview}</div>
         <div class="fg-hosts-full" id="${allHostsId}" style="display:none;margin-top:8px;padding:10px 12px;background:rgba(0,0,0,0.2);border:1px solid var(--border2);border-radius:8px">
@@ -1783,6 +1994,20 @@ function applyFindFilter(cid) {
       <div class="fg-arrow" id="${allHostsId}-arr">▾</div>
     </div>`;
   }).join("");
+}
+
+async function setFindingTriage(cid, findingKey, status) {
+  if (!window._triageMap) window._triageMap = {};
+  if (!window._triageMap[cid]) window._triageMap[cid] = {};
+  window._triageMap[cid][findingKey] = { status };
+  try {
+    await fetch(`/api/findings/${encodeURIComponent(cid)}/triage`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', ..._authHeaders()},
+      body: JSON.stringify({ finding_key: findingKey, status }),
+    });
+  } catch(e) {}
+  applyFindFilter(cid);
 }
 
 function toggleFindGroupHosts(elId) {
@@ -4191,7 +4416,7 @@ function renderInfraTab(co) {
   if (co.infra && co.infra.length) {
     el.innerHTML = shell(co.infra.map(card =>
       _infraCard(card.title, (card.rows || []).map(r => _infraRow(r.key, esc(r.val), r.cls || "")))
-    ).join(""));
+    ).join("")) + _emailPivotSection(co);
     return;
   }
 
@@ -4255,6 +4480,7 @@ function renderInfraTab(co) {
   const waf   = co.waf_coverage || {};
   const hosts = co.hosts || [];
   const cloudAssets = co.cloud_assets || {};
+  const cloudBucketFindings = (co.cloud_buckets && co.cloud_buckets.findings) || [];
   const cloudHosts = hosts.filter(h => h.cloud_provider).reduce((acc, h) => {
     const p = h.cloud_provider;
     if (!acc[p]) acc[p] = [];
@@ -4266,10 +4492,11 @@ function renderInfraTab(co) {
     Object.keys(dns).length ||
     Object.keys(waf).length ||
     Object.keys(cloudAssets).length ||
-    Object.keys(cloudHosts).length;
+    Object.keys(cloudHosts).length ||
+    cloudBucketFindings.length;
 
   if (!hasAny) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🧱</div><div class="empty-state-title">No infrastructure data yet</div><div class="empty-state-copy">Run a pipeline scan to populate ASN, DNS, WAF and leak-related infrastructure details.</div></div>`;
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🧱</div><div class="empty-state-title">No infrastructure data yet</div><div class="empty-state-copy">Run a pipeline scan to populate ASN, DNS, WAF and leak-related infrastructure details.</div></div>` + _emailPivotSection(co);
     return;
   }
 
@@ -4303,6 +4530,11 @@ function renderInfraTab(co) {
     cards += _infraCard("☁ Cloud Providers", cloudRows);
   }
 
+  const cloudBuckets = (co.cloud_buckets && co.cloud_buckets.findings) || [];
+  if (cloudBuckets.length) {
+    cards += _cloudBucketsCard(cloudBuckets);
+  }
+
   if (Object.keys(dns).length) {
     const mx = (dns.MX||[]).map(r=>r.value||r).join(', ') || '—';
     const ns = (dns.NS||[]).slice(0,4).map(r=>r.value||r).join(', ') || '—';
@@ -4317,7 +4549,75 @@ function renderInfraTab(co) {
     </div>`;
   }
 
-  el.innerHTML = shell(cards);
+  el.innerHTML = shell(cards) + _emailPivotSection(co);
+}
+
+function _cloudBucketsCard(findings) {
+  const ACCESS_LABELS = {
+    public_write_acl: "ACL pública (escrita)",
+    public_read_sensitive: "Leitura pública (sensível)",
+    public_list_sensitive: "Listagem pública (sensível)",
+    public_read: "Leitura pública",
+    public_list: "Listagem pública",
+    exists_redirect: "Existe (redirect)",
+    exists_private: "Existe (privado)",
+  };
+  const rows = findings.map(f => {
+    const accessLabel = ACCESS_LABELS[f.access] || f.access || "—";
+    const sevCls = f.severity === "critical" ? "warn" : (f.severity === "low" ? "" : "");
+    const objCount = f.object_count != null ? f.object_count : 0;
+    let extra = '';
+    if ((f.sample_objects || []).length) {
+      extra += `<div class="ic-row"><span class="ic-k"></span><span class="ic-v" style="font-family:var(--mono);font-size:.7rem;opacity:.8">Objetos: ${(f.sample_objects||[]).slice(0,8).map(o=>esc(o)).join(', ')}${f.sample_objects.length>8?'…':''}</span></div>`;
+    }
+    if ((f.sensitive_files || []).length) {
+      extra += `<div class="ic-row"><span class="ic-k"></span><span class="ic-v warn" style="font-family:var(--mono);font-size:.7rem">⚠ Arquivos sensíveis: ${(f.sensitive_files||[]).slice(0,5).map(o=>esc(o)).join(', ')}</span></div>`;
+    }
+    if (f.acl && (f.acl.public_write_perms||[]).length) {
+      extra += `<div class="ic-row"><span class="ic-k"></span><span class="ic-v warn">⚠ ACL anônima: ${esc((f.acl.public_write_perms||[]).join('/'))}</span></div>`;
+    }
+    return `<div class="ic-row"><span class="ic-k">${esc(f.provider || '')}</span><span class="ic-v ${sevCls}">${esc(f.name || '')} · ${esc(accessLabel)}${objCount ? ' · ' + objCount + ' objetos' : ''}</span></div>${extra}`;
+  }).join("");
+  return _infraCard("☁ Cloud Storage Buckets", [rows]);
+}
+
+function _emailPivotSection(co) {
+  const details = co.email_details || [];
+  const emails = co.emails || [];
+  if (!emails.length) return '';
+
+  const rows = (details.length ? details : emails.map(e => ({email: e}))).map(d => {
+    const email = d.email || '';
+    const name = [d.first_name, d.last_name].filter(Boolean).join(' ');
+    const liUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name || email)}`;
+    const hibpUrl = `https://haveibeenpwned.com/account/${encodeURIComponent(email)}`;
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent('"' + email + '"')}`;
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:.74rem">${esc(email)}</td>
+      <td>${esc(name || '—')}</td>
+      <td>${esc(d.position || '—')}</td>
+      <td>${d.confidence != null ? esc(String(d.confidence)) + '%' : '—'}</td>
+      <td class="pivot-links">
+        <a href="${escAttr(liUrl)}" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+        <a href="${escAttr(hibpUrl)}" target="_blank" rel="noopener noreferrer">HIBP</a>
+        <a href="${escAttr(googleUrl)}" target="_blank" rel="noopener noreferrer">Google</a>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="section-shell" style="margin-top:18px">
+    <div class="section-head">
+      <div class="section-head-main">
+        <div class="section-kicker">OSINT</div>
+        <div class="section-title">Pivot de E-mails / Funcionários (${emails.length})</div>
+        <div class="section-sub">E-mails e colaboradores descobertos via Hunter.io / theHarvester — use os links para pivotar em redes sociais e bases de vazamentos.</div>
+      </div>
+    </div>
+    <div style="overflow-x:auto"><table class="people-table">
+      <thead><tr><th>E-mail</th><th>Nome</th><th>Cargo</th><th>Confiança</th><th>Pivot</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  </div>`;
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -8819,6 +9119,15 @@ async function renderVulnsTab(co) {
   const tcv = document.getElementById("tc-vulns");
   if (tcv) tcv.textContent = String(apiTotal + findings.length);
 
+  try {
+    const triageR = await fetch(`/api/findings/${encodeURIComponent(co.id)}/triage`, {headers:_authHeaders()});
+    if (triageR.ok) {
+      const triageData = await triageR.json();
+      if (!window._triageMap) window._triageMap = {};
+      window._triageMap[co.id] = triageData.triage || {};
+    }
+  } catch(e) {}
+
   const cats = [...new Set(findings.map(f => f.category).filter(Boolean))].sort();
   const summaryCards = {
     critical: findings.filter(f => f.severity === "critical").length,
@@ -8859,6 +9168,10 @@ async function renderVulnsTab(co) {
         <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option>
       </select>
       <select class="fi" id="f-cat" onchange='applyFindFilter(${cidJs})'><option value="">All categories</option>${cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("")}</select>
+      <select class="fi" id="f-triage" onchange='applyFindFilter(${cidJs})'>
+        <option value="">Todos os status</option>
+        ${Object.entries(FINDING_TRIAGE_LABELS).map(([val,lbl])=>`<option value="${val}">${lbl}</option>`).join("")}
+      </select>
       <span style="font-size:.68rem;color:var(--text3);padding:6px 4px" id="f-cnt"></span>
       <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px;margin-left:auto" onclick='exportFindings(${cidJs},"csv")' title="Export CSV">⬇ CSV</button>
       <button class="btn btn-secondary" style="font-size:.68rem;padding:4px 10px" onclick='exportFindings(${cidJs},"json")' title="Export JSON">⬇ JSON</button>
@@ -9645,7 +9958,10 @@ async function renderAlertsTab(co) {
       const chs = (rule.channels || []).map(c => `<span class="channel-badge ${c}">${c}</span>`).join(' ');
       html += `<div class="rule-row">
         <div><div class="rule-name">${esc(rule.name||rule.rule_type)}</div><div class="rule-type">${esc(rule.rule_type)} · ${chs || 'no channels'}</div></div>
-        <label class="toggle"><input type="checkbox" ${rule.enabled ? 'checked' : ''} data-rid="${esc(rule.id)}" onchange="toggleAlertRule('${esc(co.id)}','${esc(rule.id)}',this.checked)"><span class="slider"></span></label>
+        <div style="display:flex;align-items:center;gap:10px">
+          <label class="toggle"><input type="checkbox" ${rule.enabled ? 'checked' : ''} data-rid="${esc(rule.id)}" onchange="toggleAlertRule('${esc(co.id)}','${esc(rule.id)}',this.checked)"><span class="slider"></span></label>
+          <button class="rule-del" title="Remove rule" onclick="deleteAlertRule('${esc(co.id)}','${esc(rule.id)}')">✕</button>
+        </div>
       </div>`;
     }
     if (!(rules.rules || rules || []).length) html += `<div class="diff-empty">No alert rules configured</div>`;
@@ -9677,10 +9993,18 @@ async function toggleAlertRule(cid, rid, enabled) {
 async function addAlertRule(cid) {
   const name = prompt("Rule name (e.g. 'New Hosts'):");
   if (!name) return;
-  const type = prompt("Rule type: new_host, new_port, new_tech, status_change, waf_change, cert_expiring, cve_critical");
+  const type = prompt("Rule type: new_host, new_port, new_tech, status_change, waf_change, cert_expiring, cve_critical, supply_chain_critical");
   if (!type) return;
-  const channels = prompt("Channels (comma-separated): slack, discord, email, webhook","slack");
-  await fetch(`/api/alert-rules/${cid}`, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({name, rule_type:type, channels:(channels||'').split(',').map(c=>c.trim()).filter(Boolean)})});
+  const channels = prompt("Channels (comma-separated): slack, discord, email, webhook, jira, linear","slack");
+  const r = await fetch(`/api/alert-rules/${cid}`, {method:'POST', headers:{'Content-Type':'application/json', ..._authHeaders()}, body:JSON.stringify({name, rule_type:type, channels:(channels||'').split(',').map(c=>c.trim()).filter(Boolean)})});
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok || data.error) { alert(data.error || 'Erro ao criar regra'); return; }
+  reloadServerData().then(() => renderCompanyView(allCompanies().find(c=>c.id===cid)));
+}
+
+async function deleteAlertRule(cid, rid) {
+  if (!confirm('Remover esta regra de alerta?')) return;
+  await fetch(`/api/alert-rules/${cid}/${rid}`, {method:'DELETE', headers:_authHeaders()});
   reloadServerData().then(() => renderCompanyView(allCompanies().find(c=>c.id===cid)));
 }
 

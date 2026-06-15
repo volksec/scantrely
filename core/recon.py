@@ -2840,17 +2840,62 @@ def _org_name_variants(org_name: str, domains: list) -> list[str]:
 
 
 def _curl_check(url: str) -> tuple[int, str]:
-    """HTTP check via curl with proper connect timeout (avoids glibc DNS hangs)."""
+    """HTTP GET via curl, returning (status_code, response_body) — body capped at ~4KB by curl's
+    own read; safe for read-only enumeration (no writes/uploads are ever performed)."""
     try:
         r = subprocess.run(
             ["curl", "-s", "-L", "--connect-timeout", "3", "-m", "5",
-             "-o", "/dev/null", "-w", "%{http_code}", "--insecure", url],
+             "-w", "\n__HTTP_CODE__%{http_code}", "--insecure", url],
             capture_output=True, text=True, timeout=8,
         )
-        code = int(r.stdout.strip()) if r.stdout.strip().isdigit() else 0
-        return code, ""
+        out = r.stdout or ""
+        marker = "\n__HTTP_CODE__"
+        idx = out.rfind(marker)
+        if idx == -1:
+            return 0, ""
+        body = out[:idx]
+        code_str = out[idx + len(marker):].strip()
+        code = int(code_str) if code_str.isdigit() else 0
+        return code, body
     except Exception:
         return 0, ""
+
+
+# Anonymous-readable ACL grants that indicate over-permissive bucket policies.
+# These checks are read-only (HTTP GET on the bucket's `?acl` sub-resource) —
+# no objects are ever written, modified, or deleted.
+_PUBLIC_GRANTEES = re.compile(
+    r'(AllUsers|AuthenticatedUsers|http://acs\.amazonaws\.com/groups/global/AllUsers|'
+    r'http://acs\.amazonaws\.com/groups/global/AuthenticatedUsers)', re.I)
+_WRITE_PERMS = re.compile(r'<Permission>\s*(WRITE|WRITE_ACP|FULL_CONTROL)\s*</Permission>', re.I)
+
+
+def _check_anonymous_acl(acl_url: str) -> dict | None:
+    """Read-only probe of a bucket's ACL sub-resource for public write grants.
+
+    Returns details about overly-permissive ACL entries (e.g. AllUsers: WRITE)
+    without performing any write operation. Returns None if the ACL is not
+    readable anonymously or contains no public grants.
+    """
+    status, body = _curl_check(acl_url)
+    if status != 200 or not body:
+        return None
+    grants = re.findall(r'<Grant>.*?</Grant>', body, re.S | re.I)
+    public_write = []
+    public_read = []
+    for grant in grants:
+        if not _PUBLIC_GRANTEES.search(grant):
+            continue
+        perms = re.findall(r'<Permission>\s*([A-Z_]+)\s*</Permission>', grant, re.I)
+        for perm in perms:
+            p = perm.upper()
+            if p in ("WRITE", "WRITE_ACP", "FULL_CONTROL"):
+                public_write.append(p)
+            elif p in ("READ", "READ_ACP"):
+                public_read.append(p)
+    if not public_write and not public_read:
+        return None
+    return {"public_write_perms": sorted(set(public_write)), "public_read_perms": sorted(set(public_read))}
 
 
 def _check_s3_bucket(name: str) -> dict | None:
@@ -2859,23 +2904,47 @@ def _check_s3_bucket(name: str) -> dict | None:
     for url in urls:
         status, raw = _curl_check(url)
         if status == 200:
-            snippet = raw[:3000] if raw else ""
-            # Parse XML listing for file count and sensitive names
+            snippet = raw[:5000] if raw else ""
+            # Parse XML listing for file count, sample objects and sensitive names
             obj_count = snippet.count("<Key>")
-            import re as _re3
+            sample_objects = re.findall(r'<Key>([^<]+)</Key>', snippet)[:15]
             _SENS = re.compile(r'<Key>([^<]*(?:\.env|\.sql|backup|\.pem|\.key|secret|password|credential|config|dump|\.bak|\.log)[^<]*)</Key>', re.I)
             sensitive_files = _SENS.findall(snippet)
             access_detail = "public_read"
             if sensitive_files:
                 access_detail = "public_read_sensitive"
+
+            # Read-only ACL probe — checks for AllUsers/AuthenticatedUsers
+            # WRITE/FULL_CONTROL grants without writing anything.
+            acl = _check_anonymous_acl(url + "?acl")
+            if acl and acl.get("public_write_perms"):
+                access_detail = "public_write_acl"
+
+            desc = (f"S3 bucket {name} is publicly readable ({obj_count} objects listed" +
+                    (f", including {len(sensitive_files)} sensitive files: {', '.join(sensitive_files[:3])}" if sensitive_files else "") + ")")
+            if acl and acl.get("public_write_perms"):
+                desc += f". ACL grants anonymous {'/'.join(acl['public_write_perms'])} access — bucket can likely be written to or have its ACL modified by anyone."
+
             return {"name": name, "provider": "AWS S3", "url": url,
                     "access": access_detail, "severity": "critical",
                     "snippet": snippet[:500],
                     "object_count": obj_count,
+                    "sample_objects": sample_objects,
                     "sensitive_files": sensitive_files[:10],
-                    "desc": f"S3 bucket {name} is publicly readable ({obj_count} objects listed" +
-                            (f", including {len(sensitive_files)} sensitive files: {', '.join(sensitive_files[:3])}" if sensitive_files else "") + ")"}
+                    "acl": acl,
+                    "desc": desc}
         if status == 403:
+            # Bucket exists but listing is denied — still probe the ACL read-only,
+            # since some buckets block listing but expose a writable ACL.
+            acl = _check_anonymous_acl(urls[0] + "?acl")
+            if acl and acl.get("public_write_perms"):
+                return {"name": name, "provider": "AWS S3", "url": urls[0],
+                        "access": "public_write_acl", "severity": "critical",
+                        "snippet": "", "object_count": 0, "sample_objects": [],
+                        "sensitive_files": [], "acl": acl,
+                        "desc": f"S3 bucket {name} blocks listing but its ACL grants anonymous "
+                                f"{'/'.join(acl['public_write_perms'])} access — bucket can likely be "
+                                f"written to or have its ACL modified by anyone."}
             return {"name": name, "provider": "AWS S3", "url": urls[0],
                     "access": "exists_private", "severity": "info", "snippet": ""}
         if status in (301, 302):
@@ -2894,6 +2963,7 @@ def _check_azure_blob(name: str) -> dict | None:
     if status == 200:
         snippet = raw[:3000] if raw else ""
         obj_count = snippet.count("<Name>")
+        sample_objects = re.findall(r'<Name>([^<]+)</Name>', snippet)[:15]
         _SENS_AZ = re.compile(r'<Name>([^<]*(?:\.env|\.sql|backup|\.pem|\.key|secret|password|credential|config|dump|\.bak|\.log)[^<]*)</Name>', re.I)
         sensitive_files = _SENS_AZ.findall(snippet)
         access_detail = "public_list"
@@ -2903,6 +2973,7 @@ def _check_azure_blob(name: str) -> dict | None:
                 "access": access_detail, "severity": "critical",
                 "snippet": snippet[:500],
                 "object_count": obj_count,
+                "sample_objects": sample_objects,
                 "sensitive_files": sensitive_files[:10],
                 "desc": f"Azure Blob container {clean} is publicly listed ({obj_count} objects)" +
                         (f", including {len(sensitive_files)} sensitive files: {', '.join(sensitive_files[:3])}" if sensitive_files else "")}
@@ -2919,19 +2990,40 @@ def _check_gcp_bucket(name: str) -> dict | None:
     if status == 200:
         snippet = raw[:3000] if raw else ""
         obj_count = snippet.count("<Key>") + snippet.count("<Name>")
+        sample_objects = re.findall(r'<(?:Key|Name)>([^<]+)</(?:Key|Name)>', snippet)[:15]
         _SENS_GCP = re.compile(r'<(?:Key|Name)>([^<]*(?:\.env|\.sql|backup|\.pem|\.key|secret|password|credential|config|dump|\.bak|\.log)[^<]*)</(?:Key|Name)>', re.I)
         sensitive_files = _SENS_GCP.findall(snippet)
         access_detail = "public_read"
         if sensitive_files:
             access_detail = "public_read_sensitive"
+
+        acl = _check_anonymous_acl(url + "?acl")
+        if acl and acl.get("public_write_perms"):
+            access_detail = "public_write_acl"
+
+        desc = (f"GCP bucket {name} is publicly readable ({obj_count} objects listed)" +
+                (f", including {len(sensitive_files)} sensitive files: {', '.join(sensitive_files[:3])}" if sensitive_files else ""))
+        if acl and acl.get("public_write_perms"):
+            desc += f". ACL grants anonymous {'/'.join(acl['public_write_perms'])} access — bucket can likely be written to or have its ACL modified by anyone."
+
         return {"name": name, "provider": "GCP Storage", "url": url,
                 "access": access_detail, "severity": "critical",
                 "snippet": snippet[:500],
                 "object_count": obj_count,
+                "sample_objects": sample_objects,
                 "sensitive_files": sensitive_files[:10],
-                "desc": f"GCP bucket {name} is publicly readable ({obj_count} objects listed)" +
-                        (f", including {len(sensitive_files)} sensitive files: {', '.join(sensitive_files[:3])}" if sensitive_files else "")}
+                "acl": acl,
+                "desc": desc}
     if status == 403:
+        acl = _check_anonymous_acl(url + "?acl")
+        if acl and acl.get("public_write_perms"):
+            return {"name": name, "provider": "GCP Storage", "url": url,
+                    "access": "public_write_acl", "severity": "critical",
+                    "snippet": "", "object_count": 0, "sample_objects": [],
+                    "sensitive_files": [], "acl": acl,
+                    "desc": f"GCP bucket {name} blocks listing but its ACL grants anonymous "
+                            f"{'/'.join(acl['public_write_perms'])} access — bucket can likely be "
+                            f"written to or have its ACL modified by anyone."}
         return {"name": name, "provider": "GCP Storage", "url": url,
                 "access": "exists_private", "severity": "info", "snippet": ""}
     return None
