@@ -6,6 +6,9 @@
 ![Módulos](https://img.shields.io/badge/módulos-79-green)
 ![Python](https://img.shields.io/badge/python-3.10+-yellow)
 ![Playwright](https://img.shields.io/badge/playwright-headless-purple)
+![Versão](https://img.shields.io/badge/versão-1.1.0-orange)
+
+> Veja o [CHANGELOG.md](CHANGELOG.md) para a lista completa de novidades e correções de cada versão.
 
 ---
 
@@ -22,6 +25,12 @@
 - **Vuln scan** — subdomain takeover, CVE lookup (NVD), CORS, infra exposure, default creds, GraphQL, SNMP, SMTP
 - **Nuclei** — template-based vulnerability scanner (API panels, tokens, exposures)
 - **Browser recon** — Playwright headless deep scan: JS analysis, secrets, CSP, CORS, forms, IDOR/XSS
+- **Triagem de findings** — status persistido (aberto/em progresso/corrigido/risco aceito) por finding
+- **Alertas configuráveis** — CRUD completo de regras (tipo, canais, ativar/desativar) por empresa
+- **Busca global (Ctrl+K)** — pesquisa empresas, domínios, hosts, pessoas e findings
+- **Exportação de relatórios** — HTML e PDF (via impressão do navegador)
+- **Pivot de e-mails/funcionários** — contatos com links para LinkedIn, HaveIBeenPwned e Google
+- **Cloud exposure** — checagem de buckets S3/Azure Blob/GCS com probe de ACL pública e amostragem de objetos
 
 ---
 

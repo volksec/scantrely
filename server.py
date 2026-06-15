@@ -929,7 +929,7 @@ if __name__ == "__main__":
 
     print(f"""
   ╔═══════════════════════════════════╗
-  ║    ASM Platform — Server v1.0    ║
+  ║    ASM Platform — Server v1.1    ║
   ╚═══════════════════════════════════╝
   → http://{args.host}:{args.port}
   → Database      : {DB_FILE}
