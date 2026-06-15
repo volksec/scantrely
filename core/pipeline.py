@@ -4264,24 +4264,26 @@ class ReconRunner:
             sev = sf.get("severity", "high")
             if sev not in ("critical", "high", "medium"):
                 continue
-            key = f"secret-{sf.get('type','')}-{sf.get('value','')[:40]}-{sf.get('host','')}"
+            secret_type = (sf.get("metadata") or {}).get("secret_type") or sf.get("type", "unknown")
+            source_url  = sf.get("file") or (sf.get("metadata") or {}).get("source_url") or sf.get("url", "")
+            key = f"secret-{secret_type}-{sf.get('value','')[:40]}-{sf.get('host','')}"
             if key not in existing_keys:
                 all_findings.append({
                     "key":      key,
                     "type":     "secret",
-                    "title":    f"Secret exposto: {sf.get('type','unknown')} em {sf.get('host','')}",
+                    "title":    f"Secret exposto: {secret_type} em {sf.get('host','')}",
                     "severity": sev,
                     "category": "secrets",
-                    "desc":     sf.get("desc") or f"Tipo: {sf.get('type','')} · Arquivo: {sf.get('file','')} · Valor parcial: {str(sf.get('value',''))[:60]}",
+                    "desc":     sf.get("desc") or f"Tipo: {secret_type} · Arquivo: {source_url} · Valor parcial: {str(sf.get('value',''))[:60]}",
                     "host":     sf.get("host", primary_domain),
                     "value":    str(sf.get("value", ""))[:120],
-                    "url":      sf.get("file") or sf.get("url", ""),
+                    "url":      source_url,
                     "module":   "js_secrets",
                     "metadata": {
                         "type":        sf.get("type"),
                         "note":        sf.get("note", ""),
-                        "secret_type": (sf.get("metadata") or {}).get("secret_type", sf.get("type", "")),
-                        "source_url":  sf.get("file") or sf.get("url", ""),
+                        "secret_type": secret_type,
+                        "source_url":  source_url,
                         "context":     (sf.get("metadata") or {}).get("context", ""),
                     },
                 })

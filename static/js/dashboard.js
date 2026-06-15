@@ -1860,10 +1860,12 @@ async function deleteAllScanHistory(cid) {
 //  FINDINGS / VULNS TAB
 // ════════════════════════════════════════════════════════════════════════
 function _confirmedVulnFindings(findings) {
-  const noise = /phish|typosquat|intel|osint|leak|credential|password|email|brand|whois|monitor|recon|alert|newsletter|exposure|marketing|search|scan noise/i;
+  const noise = /phish|typosquat|intel|osint|leak|brand|whois|monitor|newsletter|marketing|scan noise/i;
   return (findings || []).filter(f => {
     const status = String(f.status || "").toLowerCase();
-    const severity = String(f.severity || "").toLowerCase();
+    if (status.includes("false") || status.includes("ignor") || status.includes("dismiss") || status.includes("duplicate") || status.includes("invalid")) return false;
+    // Secrets are always real findings — never hide them behind the noise filter
+    if (f.type === "secret" || f.category === "secrets") return true;
     const text = [
       f.title,
       f.name,
@@ -1876,8 +1878,7 @@ function _confirmedVulnFindings(findings) {
       f.endpoint,
     ].join(" ").toLowerCase();
     if (noise.test(text)) return false;
-    if (status.includes("confirmed")) return true;
-    return false;
+    return true;
   });
 }
 
