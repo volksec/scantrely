@@ -5,6 +5,7 @@ host merging, and full multi-phase pipeline orchestration.
 """
 from __future__ import annotations
 
+import fnmatch
 import importlib.util
 import inspect
 import json
@@ -268,7 +269,7 @@ PIPELINE_PHASES = [
         "label":      "Fase 3 — Intel Útil para Bug Bounty",
         "modules":    [
             "shodan", "postman_collections", "cloud", "container_registry",
-            "bulk_dataset", "breach", "phishing", "dep_confusion",
+            "bulk_dataset", "breach", "dep_confusion",
         ],
         "rate_phase": "passive",
         "parallel":   True,
@@ -842,16 +843,26 @@ class ReconRunner:
         value = value.split("@")[-1].split("/")[0].split(":")[0].strip(".")
         return value
 
-    def _host_in_scope(self, host: str, scopes: set[str]) -> bool:
-        host = self._normalize_scope_name(host)
-        if not host or not scopes:
-            return False
-        for scope in scopes:
-            if not scope:
-                continue
-            if host == scope or host.endswith("." + scope):
-                return True
-        return False
+    @staticmethod
+    def _is_wildcard_scope(value: str) -> bool:
+        return "*" in str(value or "")
+
+    @classmethod
+    def _active_scan_domains(cls, domains: list[str]) -> list[str]:
+        """Domains usable as literal -d targets for active enumeration tools
+        (subfinder, amass, etc). Wildcard scope entries (*.mil, *.defense.gov)
+        are filters, not enumeration seeds, so they're dropped here."""
+        out = [d for d in (domains or []) if d and not cls._is_wildcard_scope(d)]
+        return out
+
+    @classmethod
+    def _primary_domain(cls, domains: list[str]) -> str:
+        """First concrete (non-wildcard) domain, used where a single 'primary
+        domain' string is required (whois, email recon, fingerprint hash, …)."""
+        for d in (domains or []):
+            if d and not cls._is_wildcard_scope(d):
+                return d
+        return domains[0] if domains else ""
 
     @staticmethod
     def _bug_bounty_host_score(host: dict) -> int:
@@ -991,7 +1002,7 @@ class ReconRunner:
         return self._stable_hash(self._host_fingerprint_seed(hosts))
 
     def _module_checkpoint_fingerprint(self, cid: str, module: str, co: dict, hosts: list[dict], options: dict) -> str:
-        domain = co["domains"][0] if co.get("domains") else ""
+        domain = self._primary_domain(co.get("domains") or [])
         domains = sorted({str(d).strip().lower() for d in co.get("domains", []) if str(d).strip()})
         js_data = co.get("js_data") or {}
         tech_index = co.get("tech_index") or {}
@@ -1436,7 +1447,7 @@ class ReconRunner:
 
     def _run_dep_confusion(self, cid: str, co: dict, options: dict) -> dict:
         token = options.get("github_token", "") or self.get_settings().get("github_token", "")
-        domains = [str(d).strip() for d in (co.get("domains") or []) if str(d).strip()]
+        domains = self._active_scan_domains(co.get("domains") or [])
         if not domains:
             return {"status": "skipped", "reason": "No domains available for dependency confusion check"}
         timeout_s = int(os.environ.get("ASM_DEP_CONFUSION_TIMEOUT", "180") or 180)
@@ -1481,8 +1492,8 @@ class ReconRunner:
 
     def _make_fn_map(self, cid: str, co: dict, options: dict, hosts: list) -> dict:
         """Build the module → callable map for the given execution context."""
-        domain = co["domains"][0] if co.get("domains") else ""
-        domains = co.get("domains", [domain])
+        domain = self._primary_domain(co.get("domains") or [])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
         screenshots_dir = str(self.base / "scans" / cid / "screenshots")
         r = self._recon
         return {
@@ -1530,7 +1541,6 @@ class ReconRunner:
             "certstream":    lambda: self._api_retry_wrapper(
                 lambda: r.run_certstream_snapshot(domains, duration_sec=90)
             ),
-            "phishing":      lambda: r.run_phishing_monitor(domains, co.get("name", "")),
             "dep_confusion": lambda: self._run_dep_confusion(cid, co, options),
             "wappalyzer":    lambda: self._call_run_wappalyzer(cid, co, hosts, options),
             # ── New tool-registry modules ──────────────────────────────────────
@@ -1614,7 +1624,7 @@ class ReconRunner:
             return {"error": "recon module unavailable"}
 
         hosts  = hosts if hosts is not None else co.get("hosts", [])
-        domains = co.get("domains", [])
+        domains = self._active_scan_domains(co.get("domains") or [])
         screenshot_dir = str(self.base / "scans" / cid / "screenshots")
         Path(screenshot_dir).mkdir(parents=True, exist_ok=True)
 
@@ -1664,7 +1674,7 @@ class ReconRunner:
         """Run subfinder on up to 20 key domains in parallel."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         all_subdomains: set[str] = set()
-        domains = co.get("domains", [domain])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
         any_blocked = False
         _errors: list[str] = []
 
@@ -1707,7 +1717,7 @@ class ReconRunner:
     def run_assetfinder(self, cid: str, co: dict, domain: str) -> dict:
         from concurrent.futures import ThreadPoolExecutor, as_completed
         all_subdomains: set[str] = set()
-        domains = co.get("domains", [domain])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
         any_blocked = False
         _errors: list[str] = []
 
@@ -1742,7 +1752,7 @@ class ReconRunner:
         all_subdomains: set[str] = set()
         all_emails: set[str] = set()
         all_ips: set[str] = set()
-        domains = co.get("domains", [domain])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
         any_blocked = False
         _errors: list[str] = []
 
@@ -1791,7 +1801,7 @@ class ReconRunner:
         Amass is slow — we cap at 4 domains max to avoid timeouts."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         all_subdomains: set[str] = set()
-        domains = co.get("domains", [domain])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
         # Only scan distinct apex domains (not subdomains of each other)
         apexes = []
         seen = set()
@@ -1834,7 +1844,7 @@ class ReconRunner:
         """Run bbot subdomain-enum preset for every company domain."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
         all_subdomains: set[str] = set()
-        domains = co.get("domains", [domain])
+        domains = self._active_scan_domains(co.get("domains") or [domain]) or [domain]
 
         def _scan(d):
             subs = set()
@@ -2389,7 +2399,7 @@ class ReconRunner:
 
         options = options or {}
         hosts_data = hosts if hosts is not None else self._load_hosts(cid)
-        domains    = co.get("domains", [])
+        domains    = self._active_scan_domains(co.get("domains") or [])
 
         # Prefer live hosts (have ports) to maximize tech detection yield
         live    = [h["host"] for h in hosts_data if h.get("host") and h.get("ports")]
@@ -3012,10 +3022,23 @@ class ReconRunner:
             return ""
         return str(final_url).split("://")[-1].split("/")[0].split(":")[0].strip().lower()
 
-    def _host_in_scope(self, host: str, domains: list[str]) -> bool:
-        """True if host equals or is a subdomain of any company scope domain."""
-        h = (host or "").lower()
-        return any(h == d or h.endswith("." + d) for d in (domains or []) if d)
+    def _host_in_scope(self, host: str, domains) -> bool:
+        """True if host equals or is a subdomain of any company scope domain.
+        Scope entries containing '*' (e.g. *.mil, *.defense.gov) are matched
+        as glob patterns against the host."""
+        h = self._normalize_scope_name(host)
+        if not h:
+            return False
+        for d in (domains or []):
+            d = self._normalize_scope_name(d)
+            if not d:
+                continue
+            if self._is_wildcard_scope(d):
+                if fnmatch.fnmatchcase(h, d):
+                    return True
+            elif h == d or h.endswith("." + d):
+                return True
+        return False
 
     def _company_domains(self, cid: str) -> list[str]:
         """Full scope domain list for a company (used for redirect scope checks)."""
@@ -3283,7 +3306,7 @@ class ReconRunner:
 
         # ── 2. Subdomain history ──────────────────────────────────────────────
         try:
-            domain = co["domains"][0] if co.get("domains") else ""
+            domain = self._primary_domain(co.get("domains") or [])
             for h in hosts[:200]:
                 hostname = h.get("host", "")
                 if not hostname:
@@ -3398,12 +3421,6 @@ class ReconRunner:
                 or breach_data.get("credentials")):
             co_data["breach_data"] = breach_data
             log(f"  ↳ Breach: {breach_data.get('total_findings', 0)} findings persistidos")
-
-        # Phishing monitor findings (data saved, findings promoted below)
-        phishing_data = _result("phishing")
-        if phishing_data.get("findings"):
-            co_data["phishing_data"] = phishing_data
-            log(f"  ↳ Phishing: {len(phishing_data.get('findings',[]))} potenciais detectados, {phishing_data.get('total_threats',0)} ameaças")
 
         # DNS findings
         dns_data = _result("dns")
@@ -4239,26 +4256,6 @@ class ReconRunner:
                     })
                     existing_keys.add(key)
 
-        # Phishing findings (promoted from phishing monitor)
-        phishing_data = co_data.get("phishing_data", {})
-        for pf in phishing_data.get("findings", []):
-            if pf.get("severity") in ("critical", "high", "medium"):
-                key = f"phishing-{pf.get('url','')}"
-                if key and key not in existing_keys:
-                    all_findings.append({
-                        "key":      key,
-                        "type":     "phishing",
-                        "title":    f"Potential Phishing: {pf.get('url','')}",
-                        "severity": pf.get("severity", "high"),
-                        "category": "phishing",
-                        "desc":     f"Risk score: {pf.get('risk_score',0)}/100. Indicators: {', '.join(pf.get('indicators',[]))}. Title: {pf.get('title','')}",
-                        "host":     pf.get("url", "").replace("https://", "").replace("http://", ""),
-                        "value":    pf.get("url", ""),
-                        "url":      pf.get("url", ""),
-                        "module":   "phishing_monitor",
-                    })
-                    existing_keys.add(key)
-
         # ── JS Secrets → main findings ─────────────────────────────────────────────
         for sf in co_data.get("secrets_findings", []):
             sev = sf.get("severity", "high")
@@ -4826,7 +4823,7 @@ class ReconRunner:
     def run_pipeline(self, cid: str, co: dict, options: dict):
         """Execute full recon pipeline in ordered phases. Blocking — run in thread."""
         options      = self._resolve_pipeline_profile(options)
-        domain       = co["domains"][0] if co.get("domains") else ""
+        domain       = self._primary_domain(co.get("domains") or [])
         mode         = options.get("mode", _rl.DEFAULT_MODE)
         total_phases = len(PIPELINE_PHASES)
         cf_detected  = False
@@ -4847,7 +4844,7 @@ class ReconRunner:
                     "hackertarget", "alienvault_otx", "hunterio", "riddler", "urlscan_io",
                     "rapiddns", "github_subdomains", "dns", "email", "certs",
                     "asn", "asnmap", "related", "reverse_whois", "typosquat", "zone_transfer",
-                    "shodan", "breach", "certstream", "phishing", "postman_collections",
+                    "shodan", "breach", "certstream", "postman_collections",
                     "apk_recon", "dep_confusion", "cloud",
                     "dns_brute", "leaks", "headers", "waf", "wappalyzer", "whatweb", "vendor_fp",
                     "js", "js_endpoints", "js_secrets", "wayback", "urlfinder", "screenshot",
@@ -5391,6 +5388,51 @@ class ReconRunner:
             self._detect_tech_changes(cid, co, _log)
         except Exception as e:
             _log(f"  ⚠ Tech change detection failed: {e}")
+
+        # ── Notifications (Telegram, Discord, Slack, WhatsApp, Signal, Email, CLI) ──
+        try:
+            self._notify_scan_complete(cid, co, _log)
+        except Exception as e:
+            _log(f"  ⚠ Notification dispatch failed: {e}")
+
+    def _notify_scan_complete(self, cid: str, co: dict, _log):
+        """Fire scan_complete (and critical_finding, if any) webhook events."""
+        from utils.notifications import notify
+
+        try:
+            data = self.db.load_asm_data()
+            co_data = next((c for c in data.get("companies", []) if c.get("id") == cid), {})
+        except Exception:
+            co_data = {}
+
+        findings = co_data.get("findings", []) or []
+        sev_counts: dict[str, int] = {}
+        for f in findings:
+            sev = str((f or {}).get("severity", "info")).lower()
+            sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+        state = self.pipeline_state.get(cid, {})
+        summary = {
+            "company_name": co.get("name", cid),
+            "company_id":   cid,
+            "status":       state.get("status", "done"),
+            "host_count":   len(co_data.get("hosts", []) or []),
+            "findings_total": len(findings),
+            "critical":     sev_counts.get("critical", 0),
+            "high":         sev_counts.get("high", 0),
+            "medium":       sev_counts.get("medium", 0),
+            "low":          sev_counts.get("low", 0),
+        }
+        notify(self.db, self.get_settings, self.base, "scan_complete", summary)
+
+        critical_findings = [f for f in findings if str((f or {}).get("severity", "")).lower() == "critical"]
+        if critical_findings:
+            notify(self.db, self.get_settings, self.base, "critical_finding", {
+                "company_name": co.get("name", cid),
+                "company_id":   cid,
+                "count":        len(critical_findings),
+                "titles":       [f.get("title", "") for f in critical_findings[:10]],
+            })
 
     def _detect_tech_changes(self, cid: str, co: dict, _log):
         """Compare current tech stack with previous scan and generate alerts for changes."""

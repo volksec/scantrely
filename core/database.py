@@ -370,6 +370,14 @@ class ASMDatabase:
 
     def _migrate_settings(self) -> None:
         data = self._read_json_file(self.settings_file, {})
+        if not isinstance(data, dict) or not data:
+            # Primary settings file missing/empty (e.g. accidental delete) —
+            # recover from the redundant backup copy if present.
+            if self.settings_file:
+                backup = self.settings_file.with_name(self.settings_file.stem + ".backup.json")
+                backup_data = self._read_json_file(backup, {})
+                if isinstance(backup_data, dict):
+                    data = backup_data
         if not isinstance(data, dict):
             return
         existing = self.get_settings()
@@ -1798,7 +1806,15 @@ class ASMDatabase:
 
     def _sync_settings_file(self) -> None:
         if self.settings_file:
-            self.settings_file.write_text(json.dumps(self.get_settings(), indent=2, ensure_ascii=False))
+            payload = json.dumps(self.get_settings(), indent=2, ensure_ascii=False)
+            self.settings_file.write_text(payload)
+            # Redundant backup copy — survives accidental deletion/overwrite of
+            # the primary settings file (e.g. manual cleanup, half-finished gitpull).
+            backup = self.settings_file.with_name(self.settings_file.stem + ".backup.json")
+            try:
+                backup.write_text(payload)
+            except Exception:
+                pass
 
     def _sync_admins_file(self) -> None:
         if self.admins_file:

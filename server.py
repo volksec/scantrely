@@ -425,52 +425,16 @@ def _load_webhooks() -> list:
 
 
 def _send_webhook(hook: dict, payload: dict):
-    url  = hook.get("url", "")
-    kind = hook.get("type", "generic")
-    if not url or not url.startswith(("https://", "http://")):
-        return
-    # Block SSRF to private/loopback addresses
-    try:
-        from urllib.parse import urlparse as _urlparse
-        import ipaddress as _ipaddress
-        _host = _urlparse(url).hostname or ""
-        try:
-            _addr = _ipaddress.ip_address(_host)
-            if _addr.is_private or _addr.is_loopback or _addr.is_link_local:
-                return
-        except ValueError:
-            if _host in ("localhost",) or _host.endswith(".local"):
-                return
-    except Exception:
-        return
-    try:
-        if kind == "slack":
-            body = {"text": payload.get("text", ""), "blocks": payload.get("blocks")}
-        elif kind == "discord":
-            body = {"content": payload.get("text", ""), "embeds": payload.get("embeds")}
-        elif kind == "telegram":
-            body = {"chat_id": hook.get("chat_id", ""), "text": payload.get("text", ""), "parse_mode": "HTML"}
-        else:
-            body = payload
-        data = json.dumps({k: v for k, v in body.items() if v is not None}).encode()
-        req = Request(url, data=data, headers={"Content-Type": "application/json",
-                                               "User-Agent": "ASM-Platform/1.0"}, method="POST")
-        urlopen(req, timeout=8)
-    except Exception:
-        pass
+    """Test/ad-hoc send for a single webhook (used by /api/webhooks/test)."""
+    from utils.notifications import dispatch_webhook
+    text = payload.get("text", "")
+    dispatch_webhook(hook, "test", {"message": text}, settings=_get_settings(), base_dir=BASE)
 
 
 def _fire_webhooks(event: str, company_name: str, company_id: str, summary: dict):
-    hooks = _load_webhooks()
-    if not hooks:
-        return
-    lines = [f"🔍 *ASM Alert* — {company_name} (`{event}`)"]
-    for k, v in summary.items():
-        lines.append(f"  • {k}: {v}")
-    text = "\n".join(lines)
-    for hook in hooks:
-        if event in hook.get("events", [event]):
-            _send_webhook(hook, {"text": text})
+    """Dispatch a scan event to every configured webhook subscribed to it."""
+    from utils.notifications import notify
+    notify(DB, _get_settings, BASE, event, {"company_name": company_name, "company_id": company_id, **summary})
 
 
 # ─── Surface diff (snapshot-based) ────────────────────────────────────────────
@@ -742,6 +706,7 @@ _SETTINGS_KEYS = {
     "fofa_email", "fofa_key", "netlas_key", "chaos_key",
     "leakix_key", "hunter_key", "intelx_key", "nvd_key",
     "otx_key", "wpscan_token", "whoisxml_key",
+    "hermes_api_key", "hermes_base_url", "hermes_model",
     "playwright_auto_run", "playwright_safe_mode", "playwright_headless",
     "playwright_allow_external", "playwright_trace", "playwright_max_pages",
     "playwright_max_depth", "playwright_timeout", "playwright_slow_mo",
