@@ -5221,8 +5221,12 @@ class ReconRunner:
             self.pipeline_state[cid]["phase_idx"] = phase_idx
             self.pipeline_state[cid]["phase_id"] = phase_id
             self._save_pipeline_state(cid)
-            # Persist deferred to end of pipeline — avoids DB lock contention
-            # between persist thread and pipeline gate checks
+            # Persist results so far — if the process is killed mid-scan, findings
+            # and hosts collected up to this phase are not lost.
+            try:
+                self._persist_pipeline_results(cid, _log, _options=options, _co=co)
+            except Exception as e:
+                _log(f"  ⚠ Falha ao persistir progresso parcial: {e}")
 
             # ── Cloudflare detection & mode adjustment (após Fase 4 profiling) ──
             if phase_id == "fingerprint" and not cf_detected:
