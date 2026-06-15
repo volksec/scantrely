@@ -1702,11 +1702,44 @@ html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .ss-empty p  { font-size:0.78rem; }
 
 /* ── BUG BOUNTY HELPER / EXTERNAL TOOLS ── */
-.bbh-card {
+.bbh-module-card {
   background:var(--card); border:1px solid var(--border); border-radius:10px;
-  padding:12px 14px; transition:border-color .15s, background .15s; cursor:pointer;
+  padding:13px 16px; cursor:pointer; display:flex; align-items:center;
+  justify-content:space-between; gap:10px;
+  transition:border-color .15s, background .15s, transform .1s;
+  user-select:none;
 }
-.bbh-card:hover { border-color:var(--teal); background:rgba(0,201,167,0.05); }
+.bbh-module-card:hover {
+  border-color:var(--teal); background:rgba(0,201,167,0.06); transform:translateY(-1px);
+}
+.bbh-module-card:active { transform:translateY(0); }
+.bbh-icon  { font-size:1.15rem; flex-shrink:0; }
+.bbh-module-label { font-size:.82rem; color:var(--text1); font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* Domain input strip */
+.bbh-domain-strip {
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  background:var(--card); border:1px solid var(--border); border-radius:12px;
+  padding:14px 18px; margin-bottom:14px;
+}
+.bbh-domain-strip input {
+  flex:1; min-width:200px; background:var(--bg); border:1px solid var(--border);
+  border-radius:8px; padding:8px 12px; font-size:.88rem; color:var(--text1);
+  font-family:var(--mono); outline:none; transition:border-color .15s;
+}
+.bbh-domain-strip input:focus  { border-color:var(--teal); }
+.bbh-domain-strip .bbh-tip     { font-size:.7rem; color:var(--text3); }
+
+/* External tools grid */
+.bbh-ext-card {
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:14px 16px; display:flex; align-items:center; gap:12px;
+  text-decoration:none; color:inherit; transition:border-color .15s, background .15s, transform .1s;
+}
+.bbh-ext-card:hover {
+  border-color:var(--teal); background:rgba(0,201,167,0.06); transform:translateY(-1px);
+}
+.bbh-ext-desc { font-size:.7rem; color:var(--text3); margin-top:2px; }
 
 /* ── TOOLS PAGE ── */
 .tool-card {

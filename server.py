@@ -364,6 +364,10 @@ def serve_config_js():
 def serve_i18n_js():
     return (BASE / "static" / "js" / "i18n.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
+@app.route("/js/bugbounty.js")
+def serve_bugbounty_js():
+    return (BASE / "static" / "js" / "bugbounty.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+
 @app.route("/favicon.ico")
 def serve_favicon():
     return "", 204
