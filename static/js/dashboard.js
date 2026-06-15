@@ -6080,8 +6080,16 @@ function showPage(page) {
   // Only stop the jobs table poll (nav badge poll always runs)
   if (_jobsPoll) { clearInterval(_jobsPoll); _jobsPoll = null; }
 
+  const _t = (k) => (typeof window.t === 'function' ? window.t(k) : k);
+  const _crumb = (k) => {
+    document.getElementById("crumb-sep").style.display = "";
+    document.getElementById("crumb-current").textContent = _t(k);
+  };
+  const _i18n = () => { if (typeof window.applyI18n === 'function') window.applyI18n(); };
+
   if (page === "companies") {
     _showCompaniesView();
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('companies');
     return;
   } else if (page === "jobs") {
@@ -6091,10 +6099,10 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-jobs").classList.add("active");
     _syncSidebarActive();
-    document.getElementById("crumb-sep").style.display = "";
-    document.getElementById("crumb-current").textContent = "Job Queue";
+    _crumb('crumb_jobs');
     loadJobs();
     _jobsPoll = setInterval(loadJobs, 5000);
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('jobs');
   } else if (page === "tools") {
     state.page = "tools";
@@ -6103,7 +6111,9 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-tools").classList.add("active");
     _syncSidebarActive();
+    _crumb('crumb_tools');
     loadToolsStatus();
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('tools');
   } else if (page === "settings") {
     state.page = "settings";
@@ -6114,7 +6124,9 @@ function showPage(page) {
     document.getElementById("nav-all").closest("nav").querySelectorAll(".nav-item").forEach(b=>{
       if(b.getAttribute("onclick")==="showPage('settings')") b.classList.add("active");
     });
+    _crumb('crumb_settings');
     loadSettings();
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('settings');
   } else if (page === "runtime") {
     state.page = "runtime";
@@ -6123,7 +6135,9 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-runtime").classList.add("active");
     _syncSidebarActive();
+    _crumb('crumb_runtime');
     loadRuntimeConfig();
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('runtime');
   } else if (page === "admins") {
     state.page = "admins";
@@ -6132,7 +6146,9 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-admins").classList.add("active");
     _syncSidebarActive();
+    _crumb('crumb_admins');
     loadAdmins();
+    _i18n();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('admins');
   } else if (page === "bbhelper") {
     state.page = "bbhelper";
@@ -6141,8 +6157,7 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-bbhelper").classList.add("active");
     _syncSidebarActive();
-    document.getElementById("crumb-sep").style.display = "";
-    document.getElementById("crumb-current").textContent = "Bug Bounty Helper";
+    _crumb('crumb_bbhelper');
     if (typeof showBBHelperPage === 'function') showBBHelperPage();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('bbhelper');
   } else if (page === "exttools") {
@@ -6152,8 +6167,7 @@ function showPage(page) {
     document.body.classList.remove("executive-home");
     document.getElementById("view-exttools").classList.add("active");
     _syncSidebarActive();
-    document.getElementById("crumb-sep").style.display = "";
-    document.getElementById("crumb-current").textContent = "External Tools";
+    _crumb('crumb_exttools');
     if (typeof showExtToolsPage === 'function') showExtToolsPage();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('exttools');
   }
@@ -8066,7 +8080,7 @@ function renderSettingsGrid() {
       <input type="password" class="sg-input${val? " has-value":""}"
              id="sg-${f.key}" value="${esc(val)}"
              placeholder="${esc(f.hint)}"
-             oninput="document.getElementById('settings-save-status').textContent='Unsaved changes';document.getElementById('settings-save-status').className='save-status'">
+             oninput="document.getElementById('settings-save-status').textContent=(typeof window.t==='function'?window.t('settings_unsaved_mod'):'Unsaved changes');document.getElementById('settings-save-status').className='save-status'">
       <button class="sg-toggle" onclick="toggleSgVisibility('sg-${f.key}',this)" title="Show/hide">👁</button>
     </div>
   </div>`;
@@ -8096,7 +8110,7 @@ function renderRuntimeGrid() {
       <input type="text" class="sg-input${val? " has-value":""}"
              id="rt-${f.key}" value="${esc(val)}"
              placeholder="${esc(f.hint)}"${tip ? ` title="${tip}"` : ""}
-             oninput="document.getElementById('runtime-save-status').textContent='Unsaved changes';document.getElementById('runtime-save-status').className='save-status'">
+             oninput="document.getElementById('runtime-save-status').textContent=(typeof window.t==='function'?window.t('settings_unsaved_mod'):'Unsaved changes');document.getElementById('runtime-save-status').className='save-status'">
     </div>
   </div>`;
   }).join("")}
@@ -8112,7 +8126,8 @@ async function loadRuntimeConfig() {
     }
   } catch(e) {}
   renderRuntimeGrid();
-  document.getElementById("runtime-save-status").textContent = "Config loaded from server";
+  const _t = (k) => (typeof window.t === 'function' ? window.t(k) : k);
+  document.getElementById("runtime-save-status").textContent = _t('config_loaded');
   document.getElementById("runtime-save-status").className = "save-status ok";
 }
 
@@ -8123,17 +8138,18 @@ async function saveRuntimeConfig() {
     if (el && el.value.trim()) data[f.key] = el.value.trim();
   }));
   const st = document.getElementById("runtime-save-status");
+  const _t = (k) => (typeof window.t === 'function' ? window.t(k) : k);
   try {
     const r = await fetch("/api/settings", {
       method: "POST", body: JSON.stringify(data),
       headers: _authHeaders(),
     });
     if (r.ok) {
-      st.textContent = "✓ Config saved — restart server to apply";
+      st.textContent = _t('config_saved_ok');
       st.className = "save-status ok";
     } else {
       const d = await r.json();
-      throw new Error(d.error || "Save failed");
+      throw new Error(d.error || _t('config_save_err'));
     }
   } catch(e) {
     st.textContent = "Error: " + e.message;
@@ -8157,7 +8173,8 @@ async function loadSettings() {
     }
   } catch(e) {}
   renderSettingsGrid();
-  document.getElementById("settings-save-status").textContent = "Settings loaded from server";
+  const _t = (k) => (typeof window.t === 'function' ? window.t(k) : k);
+  document.getElementById("settings-save-status").textContent = _t('settings_loaded');
   document.getElementById("settings-save-status").className = "save-status ok";
   loadWebhooks();
 }
@@ -8170,12 +8187,13 @@ async function saveSettings() {
   }));
   _settingsData = data;
   const st = document.getElementById("settings-save-status");
-  if (!SERVER_MODE) { st.textContent = "Demo mode — settings not persisted"; st.className="save-status err"; return; }
+  const _t = (k) => (typeof window.t === 'function' ? window.t(k) : k);
+  if (!SERVER_MODE) { st.textContent = _t('settings_demo_mode'); st.className="save-status err"; return; }
   try {
     const r = await fetch("/api/settings", {method:"POST", body:JSON.stringify(data), headers: _authHeaders()});
-    if (r.ok) { st.textContent = "✓ Settings saved"; st.className="save-status ok"; }
-    else { st.textContent = "Error saving settings"; st.className="save-status err"; }
-  } catch(e) { st.textContent = "Connection error"; st.className="save-status err"; }
+    if (r.ok) { st.textContent = _t('settings_saved_ok'); st.className="save-status ok"; }
+    else { st.textContent = _t('settings_save_err'); st.className="save-status err"; }
+  } catch(e) { st.textContent = _t('settings_conn_err'); st.className="save-status err"; }
 }
 
 // ── Notifications / Webhooks (Telegram, Discord, Slack, WhatsApp, Signal, Email, CLI) ──

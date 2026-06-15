@@ -132,6 +132,26 @@ window.I18N_STRINGS = {
   // ── External Tools ──
   ext_title:          {en:"✦ External Tools", "pt-br":"✦ Ferramentas Externas", es:"✦ Herramientas Externas"},
   ext_desc:           {en:"One-click shortcuts to external recon, OSINT and utility tools used during bug bounty engagements.", "pt-br":"Atalhos com um clique para ferramentas externas de recon, OSINT e utilitários usados em engajamentos de bug bounty.", es:"Accesos directos a herramientas externas de recon, OSINT y utilidades usadas en programas de bug bounty."},
+
+  // ── Dynamic status / feedback strings ──
+  settings_loaded:       {en:"Settings loaded from server", "pt-br":"Configurações carregadas do servidor", es:"Configuración cargada del servidor"},
+  config_loaded:         {en:"Config loaded from server",   "pt-br":"Config carregada do servidor",   es:"Configuración cargada del servidor"},
+  settings_unsaved_mod:  {en:"Unsaved changes",             "pt-br":"Alterações não salvas",          es:"Cambios sin guardar"},
+  settings_saved_ok:     {en:"✓ Settings saved",            "pt-br":"✓ Configurações salvas",         es:"✓ Configuración guardada"},
+  settings_save_err:     {en:"Error saving settings",       "pt-br":"Erro ao salvar configurações",   es:"Error al guardar configuración"},
+  settings_conn_err:     {en:"Connection error",            "pt-br":"Erro de conexão",                es:"Error de conexión"},
+  settings_demo_mode:    {en:"Demo mode — settings not persisted", "pt-br":"Modo demo — configurações não salvas", es:"Modo demo — configuración no guardada"},
+  config_saved_ok:       {en:"✓ Config saved — restart server to apply", "pt-br":"✓ Config salva — reinicie o servidor para aplicar", es:"✓ Config guardada — reinicie el servidor para aplicar"},
+  config_save_err:       {en:"Error saving config",         "pt-br":"Erro ao salvar config",          es:"Error al guardar config"},
+
+  // ── Breadcrumbs ──
+  crumb_jobs:     {en:"Job Queue",        "pt-br":"Fila de Jobs",     es:"Cola de Trabajos"},
+  crumb_tools:    {en:"Tools",            "pt-br":"Ferramentas",      es:"Herramientas"},
+  crumb_settings: {en:"API Keys",         "pt-br":"Chaves de API",    es:"Claves de API"},
+  crumb_runtime:  {en:"Performance",      "pt-br":"Performance",      es:"Rendimiento"},
+  crumb_admins:   {en:"Admin",            "pt-br":"Admin",            es:"Admin"},
+  crumb_bbhelper: {en:"Bug Bounty Helper","pt-br":"Bug Bounty Helper","es":"Bug Bounty Helper"},
+  crumb_exttools: {en:"External Tools",   "pt-br":"Ferramentas Externas","es":"Herramientas Externas"},
 };
 
 window.t = function(key) {
