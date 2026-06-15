@@ -7293,49 +7293,49 @@ document.addEventListener("DOMContentLoaded", initJobQueueHandlers);
 const SETTINGS_SCHEMA = [
   { group:"Threat Intelligence", icon:"📡", desc:"Active asset discovery & port/service data",
     fields:[
-      {key:"shodan_key",          label:"Shodan API Key",          tag:"free",     hint:"shodan.io — free plan available"},
-      {key:"censys_api_id",       label:"Censys API ID",           tag:"free",     hint:"censys.io — free researcher plan"},
-      {key:"censys_api_secret",   label:"Censys API Secret",       tag:"free",     hint:"Paired with Censys API ID"},
-      {key:"binaryedge_key",      label:"BinaryEdge API Key",      tag:"paid",     hint:"binaryedge.io"},
-      {key:"fullhunt_key",        label:"FullHunt API Key",        tag:"free",     hint:"fullhunt.io — free tier"},
-      {key:"netlas_key",          label:"Netlas API Key",          tag:"free",     hint:"netlas.io — free tier available"},
+      {key:"shodan_key",          label:"Shodan API Key",          tag:"free",     hint:"shodan.io — free plan available",        signup:"https://account.shodan.io/"},
+      {key:"censys_api_id",       label:"Censys API ID",           tag:"free",     hint:"censys.io — free researcher plan",       signup:"https://search.censys.io/account/api"},
+      {key:"censys_api_secret",   label:"Censys API Secret",       tag:"free",     hint:"Paired with Censys API ID",              signup:"https://search.censys.io/account/api"},
+      {key:"binaryedge_key",      label:"BinaryEdge API Key",      tag:"paid",     hint:"binaryedge.io",                          signup:"https://app.binaryedge.io/account/api"},
+      {key:"fullhunt_key",        label:"FullHunt API Key",        tag:"free",     hint:"fullhunt.io — free tier",                signup:"https://fullhunt.io/dashboard/api"},
+      {key:"netlas_key",          label:"Netlas API Key",          tag:"free",     hint:"netlas.io — free tier available",        signup:"https://app.netlas.io/profile/"},
     ]
   },
   { group:"OSINT & Breach Data", icon:"💀", desc:"Credential leaks, breach intelligence, dark web",
     fields:[
-      {key:"hibp_key",            label:"HaveIBeenPwned API Key",  tag:"paid",     hint:"haveibeenpwned.com — domain search requires paid"},
-      {key:"dehashed_key",        label:"DeHashed API Key",        tag:"paid",     hint:"dehashed.com — email/credential search"},
-      {key:"leakix_key",          label:"LeakIX API Key",          tag:"free",     hint:"leakix.net — free tier works without key"},
-      {key:"intelx_key",          label:"IntelligenceX API Key",   tag:"paid",     hint:"intelx.io — leak & darkweb OSINT"},
+      {key:"hibp_key",            label:"HaveIBeenPwned API Key",  tag:"paid",     hint:"haveibeenpwned.com — domain search requires paid", signup:"https://haveibeenpwned.com/API/Key"},
+      {key:"dehashed_key",        label:"DeHashed API Key",        tag:"paid",     hint:"dehashed.com — email/credential search", signup:"https://www.dehashed.com/profile"},
+      {key:"leakix_key",          label:"LeakIX API Key",          tag:"free",     hint:"leakix.net — free tier works without key", signup:"https://leakix.net/settings"},
+      {key:"intelx_key",          label:"IntelligenceX API Key",   tag:"paid",     hint:"intelx.io — leak & darkweb OSINT",       signup:"https://intelx.io/account?tab=developer"},
     ]
   },
   { group:"DNS & Subdomain", icon:"🌐", desc:"Passive subdomain enumeration & DNS intelligence",
     fields:[
-      {key:"securitytrails_key",  label:"SecurityTrails API Key",  tag:"free",     hint:"securitytrails.com — 50 req/month free"},
-      {key:"chaos_key",           label:"Chaos (ProjectDiscovery)",tag:"free",     hint:"chaos.projectdiscovery.io — free for researchers"},
-      {key:"whoisxml_key",        label:"WhoisXML API Key",        tag:"paid",     hint:"whoisxmlapi.com — reverse WHOIS (domínios irmãos da org)"},
+      {key:"securitytrails_key",  label:"SecurityTrails API Key",  tag:"free",     hint:"securitytrails.com — 50 req/month free", signup:"https://securitytrails.com/app/account"},
+      {key:"chaos_key",           label:"Chaos (ProjectDiscovery)",tag:"free",     hint:"chaos.projectdiscovery.io — free for researchers", signup:"https://chaos.projectdiscovery.io/"},
+      {key:"whoisxml_key",        label:"WhoisXML API Key",        tag:"paid",     hint:"whoisxmlapi.com — reverse WHOIS (domínios irmãos da org)", signup:"https://user.whoisxmlapi.com/products"},
     ]
   },
   { group:"CVE & Vulnerability DB", icon:"💥", desc:"CVE intelligence from NVD — cross-reference detected technologies with known vulnerabilities",
     fields:[
-      {key:"nvd_key",             label:"NVD API Key",             tag:"free",     hint:"nvd.nist.gov — free, 50 req/30s with key vs 5 without"},
+      {key:"nvd_key",             label:"NVD API Key",             tag:"free",     hint:"nvd.nist.gov — free, 50 req/30s with key vs 5 without", signup:"https://nvd.nist.gov/developers/request-an-api-key"},
     ]
   },
   { group:"Code & Secrets", icon:"🔑", desc:"GitHub secrets, code leaks, API keys in repos",
     fields:[
-      {key:"github_token",        label:"GitHub Token",            tag:"free",     hint:"Personal access token — avoids rate limits"},
+      {key:"github_token",        label:"GitHub Token",            tag:"free",     hint:"Personal access token — avoids rate limits", signup:"https://github.com/settings/tokens/new"},
     ]
   },
   { group:"Email & Identity", icon:"✉", desc:"Email infrastructure and identity OSINT",
     fields:[
-      {key:"hunter_key",          label:"Hunter.io API Key",       tag:"free",     hint:"hunter.io — email finder, 25 req/month free"},
+      {key:"hunter_key",          label:"Hunter.io API Key",       tag:"free",     hint:"hunter.io — email finder, 25 req/month free", signup:"https://hunter.io/api_keys"},
     ]
   },
   { group:"Search Engines", icon:"🔍", desc:"Specialized internet-wide search engines",
     fields:[
-      {key:"virustotal_key",      label:"VirusTotal API Key",      tag:"free",     hint:"virustotal.com — free tier"},
-      {key:"fofa_email",          label:"FOFA Email",              tag:"paid",     hint:"fofa.info — Chinese internet search"},
-      {key:"fofa_key",            label:"FOFA API Key",            tag:"paid",     hint:"Paired with FOFA Email"},
+      {key:"virustotal_key",      label:"VirusTotal API Key",      tag:"free",     hint:"virustotal.com — free tier",             signup:"https://www.virustotal.com/gui/my-apikey"},
+      {key:"fofa_email",          label:"FOFA Email",              tag:"paid",     hint:"fofa.info — Chinese internet search",    signup:"https://fofa.info/userInfo"},
+      {key:"fofa_key",            label:"FOFA API Key",            tag:"paid",     hint:"Paired with FOFA Email",                 signup:"https://fofa.info/userInfo"},
     ]
   },
 ];
@@ -7485,6 +7485,7 @@ function renderSettingsGrid() {
     <div class="sg-label">
       <span>${f.label}</span>
       <span class="sg-tag ${f.tag}">${f.tag}</span>
+      ${f.signup ? `<a class="sg-getkey" href="${escAttr(f.signup)}" target="_blank" rel="noopener noreferrer" title="Obter chave em ${escAttr(new URL(f.signup).hostname)}">🔗 Obter chave</a>` : ""}
     </div>
     <div class="sg-input-wrap">
       <input type="password" class="sg-input${val? " has-value":""}"
