@@ -52,6 +52,14 @@
     <div class="login-err" id="login-err"></div>
   </div>
 </div>
+<script>
+(function(){
+  try {
+    var t = localStorage.getItem("asmToken") || localStorage.getItem("asm_token");
+    if (t) document.getElementById("login-screen").style.display = "none";
+  } catch(e) {}
+})();
+</script>
 
 <!-- ═══════════════════════════ SIDEBAR ══ -->
 <aside class="sidebar" id="app-sidebar" aria-label="Primary navigation">
@@ -689,7 +697,7 @@
 <script src="js/api.js"></script>
 
 <!-- ── Optional: load generated data from parser ── -->
-<script src="dashboard.js?v=53"></script>
+<script src="dashboard.js?v=54"></script>
 
 </body>
 </html>

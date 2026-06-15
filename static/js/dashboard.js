@@ -7596,9 +7596,6 @@ const SETTINGS_SCHEMA = [
     fields:[
       {key:"shodan_key",          label:"Shodan API Key",          tag:"free",     hint:"shodan.io — free plan available",        signup:"https://account.shodan.io/"},
       {key:"censys_api_id",       label:"Censys API ID",           tag:"free",     hint:"censys.io — free researcher plan",       signup:"https://search.censys.io/account/api"},
-      {key:"censys_api_secret",   label:"Censys API Secret",       tag:"free",     hint:"Paired with Censys API ID",              signup:"https://search.censys.io/account/api"},
-      {key:"binaryedge_key",      label:"BinaryEdge API Key",      tag:"paid",     hint:"binaryedge.io",                          signup:"https://app.binaryedge.io/account/api"},
-      {key:"fullhunt_key",        label:"FullHunt API Key",        tag:"free",     hint:"fullhunt.io — free tier",                signup:"https://fullhunt.io/dashboard/api"},
       {key:"netlas_key",          label:"Netlas API Key",          tag:"free",     hint:"netlas.io — free tier available",        signup:"https://app.netlas.io/profile/"},
     ]
   },

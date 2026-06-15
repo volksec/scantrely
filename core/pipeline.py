@@ -5439,6 +5439,89 @@ class ReconRunner:
         # Save updated baseline
         self.db.save_snapshot(cid, {"ts": datetime.now().isoformat(timespec="seconds"), "tech_summary": current_tech, "hosts": co_data.get("hosts", [])}, slot="tech_baseline")
 
+    # ── Playwright XSS/IDOR findings merge ──────────────────────────────────────
+
+    def merge_playwright_findings(self, cid: str, session: dict) -> int:
+        """Merge execution-confirmed XSS and potential IDOR results from a Playwright
+        session into co_data["findings"] so they show up in the Vulnerabilities tab
+        (filterable, triageable) instead of being stuck in the Operation tab only.
+
+        Returns the number of new findings added.
+        """
+        try:
+            from validators import dedup_findings
+        except Exception:
+            dedup_findings = lambda x, _k="general": x
+
+        try:
+            data = self.db.load_asm_data()
+        except Exception:
+            return 0
+        co_data = next((c for c in data.get("companies", []) if c.get("id") == cid), None)
+        if co_data is None:
+            return 0
+
+        all_findings = list(co_data.get("findings") or [])
+        existing_keys = {f.get("key") or f.get("title") or "" for f in all_findings}
+        added = 0
+
+        for x in session.get("xss") or []:
+            if x.get("status") not in ("confirmed_xss", "confirmed_dom_xss"):
+                continue
+            url = x.get("url", "")
+            param = x.get("parameter", "")
+            key = f"playwright-xss-{url[:80]}-{param}"
+            if key in existing_keys:
+                continue
+            all_findings.append({
+                "key":      key,
+                "type":     "xss",
+                "title":    f"Cross-Site Scripting (XSS)" + (f" via ?{param}" if param else ""),
+                "severity": x.get("severity", "high"),
+                "category": "injection",
+                "desc":     f"Execution-confirmed XSS — payload executed in browser context ({x.get('context','')}).",
+                "host":     urlparse(url).hostname or "",
+                "value":    url,
+                "url":      url,
+                "module":   "playwright_xss",
+                "metadata": {"parameter": param, "context": x.get("context", ""), "marker": x.get("marker", "")},
+            })
+            existing_keys.add(key)
+            added += 1
+
+        for i in session.get("idor") or []:
+            if i.get("status") != "potential_idor":
+                continue
+            url = i.get("url", "")
+            param = i.get("parameter", "")
+            key = f"playwright-idor-{url[:80]}-{param}"
+            if key in existing_keys:
+                continue
+            all_findings.append({
+                "key":      key,
+                "type":     "idor",
+                "title":    "Possible IDOR" + (f" via ?{param}" if param else ""),
+                "severity": i.get("severity", "medium"),
+                "category": "access_control",
+                "desc":     "; ".join(i.get("notes") or []) or "Cross-session access difference detected.",
+                "host":     urlparse(url).hostname or "",
+                "value":    url,
+                "url":      url,
+                "module":   "playwright_idor",
+                "metadata": {"parameter": param, "candidate_kind": i.get("candidate_kind", "")},
+            })
+            existing_keys.add(key)
+            added += 1
+
+        if added:
+            all_findings = dedup_findings(all_findings, "general")
+            co_data["findings"] = all_findings
+            try:
+                self.db.save_asm_data(data)
+            except Exception:
+                return 0
+        return added
+
     # ── opensquat daily monitor ────────────────────────────────────────────────
 
     def setup_opensquat_cron(self, cid: str, keywords: list[str]) -> dict:

@@ -263,9 +263,10 @@ class JobScheduler:
     def _resource_violation(self) -> str:
         if not self.watchdog_enabled:
             return ""
-        load1 = os.getloadavg()[0]
-        if load1 > self.watchdog_max_load:
-            return f"watchdog load {load1:.2f} > {self.watchdog_max_load:.2f}"
+        if hasattr(os, "getloadavg"):
+            load1 = os.getloadavg()[0]
+            if load1 > self.watchdog_max_load:
+                return f"watchdog load {load1:.2f} > {self.watchdog_max_load:.2f}"
         mem_mb = _mem_available_mb()
         if mem_mb < self.watchdog_min_mem_mb:
             return f"watchdog mem {mem_mb}MB < {self.watchdog_min_mem_mb}MB"

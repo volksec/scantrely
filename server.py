@@ -869,12 +869,20 @@ def _safe_run_playwright_recon(cid: str, co: dict, options: dict):
     try:
         from playwright_agent.asm_bridge import run_company_playwright_job
 
-        return run_company_playwright_job(
+        result = run_company_playwright_job(
             cid,
             co,
             options,
             base_dir=BASE / "data" / "playwright-jobs",
         )
+        try:
+            session_path = Path(result.get("session_path", ""))
+            if session_path.exists():
+                session = json.loads(session_path.read_text(encoding="utf-8"))
+                _runner.merge_playwright_findings(cid, session)
+        except Exception:
+            pass
+        return result
     except Exception:
         raise
 
