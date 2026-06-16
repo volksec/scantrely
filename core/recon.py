@@ -1250,7 +1250,7 @@ def run_cert_recon(domain: str, live_hosts: list = None) -> dict:
 
     # SSL probe selected hosts; if no live hosts with port 443, probe the domain itself
     ssl_results = []
-    hosts_to_probe = [h["host"] for h in (live_hosts or []) if "443" in h.get("ports",[])]
+    hosts_to_probe = [h["host"] for h in (live_hosts or []) if 443 in h.get("ports", []) or "443" in h.get("ports", [])]
     if not hosts_to_probe:
         hosts_to_probe = [domain]
     with ThreadPoolExecutor(max_workers=10) as pool:
@@ -2049,7 +2049,11 @@ def run_vendor_fingerprint(hosts: list) -> dict:
 
 def run_headers_bulk(hosts: list, max_hosts: int = 200) -> dict:
     """Analyse headers for live HTTPS hosts (capped for speed)."""
-    targets = [h["host"] for h in hosts if "443" in h.get("ports",[])][:max_hosts]
+    targets = [
+        h["host"] for h in hosts
+        if 443 in h.get("ports", []) or "443" in h.get("ports", [])
+        or h.get("status_code") is not None
+    ][:max_hosts]
     results = []
     with ThreadPoolExecutor(max_workers=30) as pool:
         futures = {pool.submit(run_security_headers, h): h for h in targets}
@@ -3990,7 +3994,7 @@ def _detect_waf(host: str) -> dict:
 
 def run_waf_detection(hosts: list) -> dict:
     """Detect WAFs across live HTTPS hosts."""
-    targets = [h["host"] for h in hosts if "443" in h.get("ports",[])]
+    targets = [h["host"] for h in hosts if 443 in h.get("ports", []) or "443" in h.get("ports", []) or h.get("status_code") is not None]
     results = []
     with ThreadPoolExecutor(max_workers=20) as pool:
         futures = {pool.submit(_detect_waf, h): h for h in targets}

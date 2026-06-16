@@ -2227,7 +2227,8 @@ class ReconRunner:
         total_timeout = 300
         try:
             _rl.wait()
-            import select as _sel
+            import queue as _queue
+            import threading as _threading
             # nuclei is a heavy local binary (gate limit 1). Hold the gate slot
             # for the whole process lifecycle - Popen returns immediately, so
             # the gate must stay acquired until the proc exits / is killed,
@@ -2243,35 +2244,46 @@ class ReconRunner:
                     text=True,
                 )
                 deadline = time.time() + total_timeout
-                buf = ""
+                line_q: _queue.Queue = _queue.Queue()
+
+                def _read_stdout():
+                    try:
+                        for ln in proc.stdout:
+                            line_q.put(ln)
+                    except Exception:
+                        pass
+                    finally:
+                        line_q.put(None)  # sentinel
+
+                reader = _threading.Thread(target=_read_stdout, daemon=True)
+                reader.start()
+
                 while True:
                     remaining = deadline - time.time()
                     if remaining <= 0:
                         break
-                    # Use select to avoid blocking past the deadline
-                    ready, _, _ = _sel.select([proc.stdout], [], [], min(remaining, 1.0))
-                    if ready:
-                        chunk = proc.stdout.read(4096)
-                        if not chunk:
-                            break  # pipe closed = process done
-                        buf += chunk
-                        while "\n" in buf:
-                            line, buf = buf.split("\n", 1)
-                            try:
-                                item = json.loads(line.strip())
-                                host = item.get("host", "").replace("https://", "").replace("http://", "")
-                                findings.append({
-                                    "host":     host,
-                                    "template": item.get("template-id", ""),
-                                    "name":     item.get("info", {}).get("name", ""),
-                                    "severity": item.get("info", {}).get("severity", "info"),
-                                    "url":      item.get("matched-at", ""),
-                                    "tags":     item.get("info", {}).get("tags", []),
-                                })
-                            except Exception:
-                                pass
-                    elif proc.poll() is not None:
-                        break  # process exited, nothing left to read
+                    try:
+                        ln = line_q.get(timeout=min(remaining, 1.0))
+                    except _queue.Empty:
+                        if proc.poll() is not None:
+                            break
+                        continue
+                    if ln is None:
+                        break  # pipe closed = process done
+                    try:
+                        item = json.loads(ln.strip())
+                        host = item.get("host", "").replace("https://", "").replace("http://", "")
+                        findings.append({
+                            "host":     host,
+                            "template": item.get("template-id", ""),
+                            "name":     item.get("info", {}).get("name", ""),
+                            "severity": item.get("info", {}).get("severity", "info"),
+                            "url":      item.get("matched-at", ""),
+                            "tags":     item.get("info", {}).get("tags", []),
+                        })
+                    except Exception:
+                        pass
+
                 if proc.poll() is None:
                     proc.terminate()
                     try: proc.wait(timeout=5)
@@ -4091,6 +4103,49 @@ class ReconRunner:
                         "module":   "headers",
                     })
                     existing_keys.add(key)
+
+        # ── Email security findings (SPF / DMARC / DKIM) ──────────────────────────
+        _email_sec = co_data.get("email_security", {})
+        _spf = _email_sec.get("spf", {})
+        _spf_score = (_spf.get("score") or "").lower()
+        if _spf_score in ("missing", "critical", "high", "medium", "incomplete"):
+            _spf_sev = {"missing": "high", "critical": "critical", "high": "high",
+                        "medium": "medium", "incomplete": "medium"}.get(_spf_score, "medium")
+            _spf_key = f"spf-{primary_domain}"
+            if _spf_key not in existing_keys:
+                _spf_issues = "; ".join(_spf.get("issues", [])) or "SPF record ausente ou insuficiente"
+                all_findings.append({
+                    "key":      _spf_key,
+                    "type":     "email_security",
+                    "title":    f"SPF {'ausente' if _spf_score == 'missing' else 'fraco'}: {primary_domain}",
+                    "severity": _spf_sev,
+                    "category": "email",
+                    "desc":     _spf_issues + (f" | Record: {_spf['record']}" if _spf.get("record") else ""),
+                    "host":     primary_domain,
+                    "value":    _spf.get("record", ""),
+                    "module":   "email",
+                })
+                existing_keys.add(_spf_key)
+
+        _dmarc = _email_sec.get("dmarc", {})
+        _dmarc_score = (_dmarc.get("score") or "").lower()
+        if _dmarc_score in ("missing", "high", "medium"):
+            _dmarc_sev = {"missing": "high", "high": "high", "medium": "medium"}.get(_dmarc_score, "medium")
+            _dmarc_key = f"dmarc-{primary_domain}"
+            if _dmarc_key not in existing_keys:
+                _dmarc_issues = "; ".join(_dmarc.get("issues", [])) or "DMARC record ausente ou com política fraca"
+                all_findings.append({
+                    "key":      _dmarc_key,
+                    "type":     "email_security",
+                    "title":    f"DMARC {'ausente' if _dmarc_score == 'missing' else 'fraco (p=' + str(_dmarc.get('policy','?')) + ')'}: {primary_domain}",
+                    "severity": _dmarc_sev,
+                    "category": "email",
+                    "desc":     _dmarc_issues + (f" | Record: {_dmarc['record']}" if _dmarc.get("record") else ""),
+                    "host":     primary_domain,
+                    "value":    _dmarc.get("record", ""),
+                    "module":   "email",
+                })
+                existing_keys.add(_dmarc_key)
 
         # CORS misconfigurations
         for f in _result("cors_scan").get("findings", []):
