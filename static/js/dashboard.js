@@ -9096,6 +9096,37 @@ async function stopPipeline(cid, {notify = true} = {}) {
   }
 }
 
+async function cancelAllScans() {
+  const btn = document.getElementById('btn-cancel-all-scans');
+  if (!confirm('Cancelar todos os scans em execução?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelando...'; }
+  try {
+    const r = await fetch('/api/recon/cancel-all', {method:'POST', headers:_authHeaders()});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    // Update local pipeline state for all stopped companies
+    (d.cids || []).forEach(cid => {
+      pipelineState[cid] = Object.assign({}, pipelineState[cid] || {}, {
+        status: 'stopped',
+        finished_at: new Date().toISOString(),
+      });
+      if (_pipelinePolls[cid]) {
+        clearInterval(_pipelinePolls[cid]);
+        delete _pipelinePolls[cid];
+      }
+      _syncPipelineActionButton(cid);
+      if (typeof renderPipelineStatus === 'function') renderPipelineStatus(cid);
+    });
+    loadJobs();
+    const total = (d.stopped || 0);
+    alert(total > 0 ? `${total} scan(s) cancelado(s).` : 'Nenhum scan ativo encontrado.');
+  } catch(e) {
+    alert('Erro ao cancelar: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '■ Cancelar Todos'; }
+  }
+}
+
 async function runPipeline(cid) {
   const btn = document.getElementById(`pipeline-btn-${cid}`);
   if (btn) { btn.disabled = true; btn.textContent = "Starting…"; }

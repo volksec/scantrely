@@ -346,6 +346,28 @@ def create_recon_blueprint(
         """Alias for frontend stopScan() — delegates to DELETE /pipeline handler"""
         return api_stop_pipeline(cid)
 
+    @bp.route("/api/recon/cancel-all", methods=["POST"])
+    @require_auth
+    def api_cancel_all_pipelines():
+        now = datetime.now().isoformat(timespec="seconds")
+        cancelled_cids = []
+        for cid, ps in list(pipeline_state.items()):
+            if ps.get("status") in {"queued", "running"}:
+                ps["status"] = "stopped"
+                ps["finished_at"] = now
+                ps.setdefault("log", []).append({
+                    "ts": now,
+                    "msg": "⏹ Pipeline parado pelo usuário (cancelar todos)",
+                })
+                cancelled_cids.append(cid)
+        db_cancelled = 0
+        if db is not None:
+            try:
+                db_cancelled = db.cancel_all_pending_jobs()
+            except Exception:
+                pass
+        return jsonify({"ok": True, "stopped": len(cancelled_cids), "db_cancelled": db_cancelled, "cids": cancelled_cids})
+
     @bp.route("/api/recon/<cid>/pipeline", methods=["GET"])
     @require_auth
     def api_pipeline_status(cid: str):

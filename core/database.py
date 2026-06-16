@@ -1268,6 +1268,23 @@ class ASMDatabase:
             conn.commit()
         return int(cur.rowcount or 0)
 
+    def cancel_all_pending_jobs(self) -> int:
+        now = self._now()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE jobs
+                SET status = 'cancelled',
+                    error = ?,
+                    finished_at = ?,
+                    updated_at = ?
+                WHERE status IN ('pending', 'running')
+                """,
+                ("cancelled by user (cancel all)", now, now),
+            )
+            conn.commit()
+        return int(cur.rowcount or 0)
+
     def safety_hold_jobs(
         self,
         *,

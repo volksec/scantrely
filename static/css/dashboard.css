@@ -1403,6 +1403,20 @@ tr:hover td { background:rgba(255,255,255,0.015); }
   border-color:rgba(0,229,255,.18);
   background:rgba(0,229,255,.05);
 }
+.btn-danger {
+  background:rgba(239,68,68,.12);
+  border:1px solid rgba(239,68,68,.3);
+  color:#f87171;
+}
+.btn-danger:hover {
+  background:rgba(239,68,68,.22);
+  border-color:rgba(239,68,68,.5);
+  color:#fca5a5;
+}
+.btn-danger:disabled {
+  opacity:.5;
+  cursor:not-allowed;
+}
 
 /* ── SCAN BUTTON ── */
 .btn-scan {
