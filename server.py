@@ -259,12 +259,14 @@ def _set_security_headers(resp):
         "Content-Security-Policy",
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob:; "
-        "font-src 'self' data:; "
-        "connect-src 'self'; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "img-src 'self' data: blob: https:; "
+        "font-src 'self' data: https://fonts.gstatic.com; "
+        "connect-src 'self' https://fonts.googleapis.com; "
         "frame-ancestors 'none'",
     )
+    # Suppress exact version fingerprint
+    resp.headers["Server"] = "ASM"
     if request.is_secure:
         resp.headers.setdefault(
             "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
