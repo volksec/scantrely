@@ -2180,6 +2180,25 @@ html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .lt-status.timeout { background:rgba(251,191,36,0.1); color:#fbbf24; border:1px solid rgba(251,191,36,0.2); }
 .lt-paused { text-align:center; padding:8px; color:var(--text3); font-size:.65rem; font-style:italic; }
 
+/* ── HTTP Evidence panel (Burp Suite style) ─────────────────────────────── */
+.http-evidence { margin:10px 0 0; }
+.http-evidence-hdr { font-size:.62rem; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:.07em; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+.http-panels { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+@media (max-width:680px) { .http-panels { grid-template-columns:1fr; } }
+.http-panel { background:#0a0e17; border:1px solid #1e2533; border-radius:6px; overflow:hidden; min-width:0; }
+.http-panel-tab { background:#111827; border-bottom:1px solid #1e2533; padding:4px 10px; font-size:.62rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.07em; }
+.http-pre { margin:0; padding:10px 12px; font-family:var(--mono); font-size:.67rem; color:#c9d1d9; overflow-x:auto; max-height:240px; overflow-y:auto; white-space:pre; word-break:normal; line-height:1.55; scrollbar-width:thin; scrollbar-color:#1e2533 transparent; }
+.http-pre::-webkit-scrollbar { width:5px; height:5px; }
+.http-pre::-webkit-scrollbar-thumb { background:#1e2533; border-radius:3px; }
+.http-method { color:#79c0ff; font-weight:700; }
+.http-ver { color:#484f58; }
+.http-status-2 { color:#3fb950; font-weight:600; }
+.http-status-3 { color:#58a6ff; font-weight:600; }
+.http-status-4 { color:#d29922; font-weight:600; }
+.http-status-5 { color:#f85149; font-weight:600; }
+.http-hdr-name { color:#d2a8ff; }
+.http-match { background:rgba(251,191,36,.25); color:#fbbf24; border-radius:2px; padding:0 2px; font-weight:700; }
+
 .findings-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; margin-bottom:14px; }
 .findings-mini {
   padding:10px 12px; border-radius:12px; background:rgba(7,12,22,0.7);

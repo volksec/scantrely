@@ -2216,6 +2216,7 @@ function applyFindFilter(cid) {
           <div style="margin-top:8px;font-size:.65rem;color:var(--text3)">
             Click any host to copy · ${esc(f0.desc||"").slice(0,200)}${(f0.desc||"").length>200?"…":""}
           </div>
+          ${_renderHttpEvidence(group.findings)}
           <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border2)">
             <div style="font-size:.65rem;font-weight:700;color:var(--text2);text-transform:uppercase;margin-bottom:6px">🛡 Mitigation recommendations</div>
             <ul style="margin:0 0 8px 18px;padding:0;font-size:.72rem;color:var(--text2);line-height:1.5">
@@ -2301,6 +2302,67 @@ function toggleFindGroupHosts(elId) {
   const isHidden = el.style.display === "none";
   el.style.display = isHidden ? "block" : "none";
   if (arrow) arrow.textContent = isHidden ? "▴" : "▾";
+}
+
+// ── HTTP Evidence panel — Burp Suite style ─────────────────────────────────
+function _httpHighlight(rawText, matched) {
+  if (!rawText) return "";
+  // 1. Escape HTML entities first
+  let t = rawText
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // 2. Highlight HTTP request line: METHOD path HTTP/x.x
+  t = t.replace(/^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|CONNECT|TRACE)(\s)/m,
+    '<span class="http-method">$1</span>$2');
+  // 3. Highlight HTTP/x.x version token
+  t = t.replace(/(HTTP\/[12](?:\.[01])?)/g, '<span class="http-ver">$1</span>');
+  // 4. Colour status code by class
+  t = t.replace(/\b([2][0-9]{2})\b/, '<span class="http-status-2">$1</span>');
+  t = t.replace(/\b([3][0-9]{2})\b/, '<span class="http-status-3">$1</span>');
+  t = t.replace(/\b([4][0-9]{2})\b/, '<span class="http-status-4">$1</span>');
+  t = t.replace(/\b([5][0-9]{2})\b/, '<span class="http-status-5">$1</span>');
+  // 5. Highlight header names: "Name:" at start of line
+  t = t.replace(/^([A-Za-z][A-Za-z0-9_\-]+):/gm,
+    '<span class="http-hdr-name">$1</span>:');
+  // 6. Highlight matched value (injected/reflected payload)
+  if (matched) {
+    const safe = matched.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    t = t.replace(new RegExp(safe, 'gi'), '<span class="http-match">$&</span>');
+  }
+  return t;
+}
+
+function _renderHttpEvidence(findings) {
+  const instances = (findings || [])
+    .filter(f => f.request_raw || f.response_raw)
+    .slice(0, 5);
+  if (!instances.length) return "";
+
+  const blocks = instances.map((f, i) => {
+    const reqHtml  = _httpHighlight(f.request_raw  || "", f.matched || "");
+    const respHtml = _httpHighlight(f.response_raw || "", f.matched || "");
+    const hostTag  = instances.length > 1
+      ? `<code style="font-size:.62rem;background:rgba(255,255,255,.07);padding:1px 6px;border-radius:4px;margin-left:6px;color:var(--text2)">${esc(f.host||"")}</code>` : "";
+    return `
+      <div style="margin-bottom:${i < instances.length-1 ? '10' : '0'}px">
+        ${hostTag ? `<div style="font-size:.62rem;color:var(--text3);margin-bottom:4px">Instance ${i+1}${hostTag}</div>` : ""}
+        <div class="http-panels">
+          <div class="http-panel">
+            <div class="http-panel-tab">Request</div>
+            <pre class="http-pre">${reqHtml || '<span style="color:#484f58">—</span>'}</pre>
+          </div>
+          <div class="http-panel">
+            <div class="http-panel-tab">Response</div>
+            <pre class="http-pre">${respHtml || '<span style="color:#484f58">—</span>'}</pre>
+          </div>
+        </div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div class="http-evidence">
+      <div class="http-evidence-hdr">📡 HTTP Evidence</div>
+      ${blocks}
+    </div>`;
 }
 
 function _hashId() { return [...arguments].join("|").split("").reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0)|0,0).toString(36); }

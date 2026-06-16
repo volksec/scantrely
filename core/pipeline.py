@@ -2166,6 +2166,13 @@ class ReconRunner:
                         "desc":     f"{desc} at {base}{path} — HTTP {code}. Tableau confirmed: {is_tableau}",
                         "module":   "tableau",
                         "category": "exposure",
+                        "request_raw":  (
+                            f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*"
+                        ),
+                        "response_raw": (
+                            f"HTTP/1.1 {code}\r\n\r\n{body[:600]}"
+                        ),
+                        "matched":      "tableau" if is_tableau else str(code),
                     })
                     if sev in ("high", "critical"):
                         break
@@ -2239,6 +2246,7 @@ class ReconRunner:
                      "-tags", tags_str,
                      "-severity", "medium,high,critical",
                      "-jsonl", "-silent", "-no-interactsh",
+                     "-include-rr",
                      "-timeout", "8", "-c", "10", "-retries", "1"],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                     text=True,
@@ -2273,13 +2281,17 @@ class ReconRunner:
                     try:
                         item = json.loads(ln.strip())
                         host = item.get("host", "").replace("https://", "").replace("http://", "")
+                        _extracted = item.get("extracted-results") or []
                         findings.append({
-                            "host":     host,
-                            "template": item.get("template-id", ""),
-                            "name":     item.get("info", {}).get("name", ""),
-                            "severity": item.get("info", {}).get("severity", "info"),
-                            "url":      item.get("matched-at", ""),
-                            "tags":     item.get("info", {}).get("tags", []),
+                            "host":         host,
+                            "template":     item.get("template-id", ""),
+                            "name":         item.get("info", {}).get("name", ""),
+                            "severity":     item.get("info", {}).get("severity", "info"),
+                            "url":          item.get("matched-at", ""),
+                            "tags":         item.get("info", {}).get("tags", []),
+                            "request_raw":  item.get("request", ""),
+                            "response_raw": item.get("response", ""),
+                            "matched":      item.get("matcher-name", "") or (_extracted[0] if _extracted else ""),
                         })
                     except Exception:
                         pass
@@ -4224,6 +4236,9 @@ class ReconRunner:
                     "severity": f.get("severity", "high"), "category": "cors",
                     "desc": f"Origin: {f.get('origin_sent','')} → ACAO: {f.get('acao','')} ACAC: {f.get('acac','')}",
                     "host": f.get("host",""), "value": f.get("url",""), "url": f.get("url",""), "module": "cors_scan",
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 
@@ -4262,6 +4277,9 @@ class ReconRunner:
                     "severity": f.get("severity","medium"), "category": "nuclei",
                     "desc": f"Template: {f.get('template','')}",
                     "host": f.get("host",""), "value": f.get("url",""), "url": f.get("url",""), "module": "api_panels",
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 
@@ -4424,6 +4442,9 @@ class ReconRunner:
                     "url":      f.get("url", ""),
                     "module":   "infra_exposure",
                     "metadata": {"port": f.get("port"), "ip": f.get("ip"), "open_paths": f.get("open_paths", [])},
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 
@@ -4624,6 +4645,9 @@ class ReconRunner:
                     "url":      f.get("url",""),
                     "module":   "host_header_injection",
                     "metadata": f.get("metadata",{}),
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 
@@ -4650,6 +4674,9 @@ class ReconRunner:
                     "value":    f.get("url",""),
                     "url":      f.get("url",""),
                     "module":   "open_redirect",
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 
@@ -4672,6 +4699,9 @@ class ReconRunner:
                     "value":    f.get("url", ""),
                     "url":      f.get("url", ""),
                     "module":   "tableau",
+                    "request_raw":  f.get("request_raw", ""),
+                    "response_raw": f.get("response_raw", ""),
+                    "matched":      f.get("matched", ""),
                 })
                 existing_keys.add(key)
 

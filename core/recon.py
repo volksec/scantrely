@@ -6853,6 +6853,10 @@ def run_cors_scan(hosts: list) -> dict:
                         f"Access-Control-Allow-Origin: {acao}. "
                         f"Access-Control-Allow-Credentials: {acac or 'not set'}."
                     ),
+                
+                    "request_raw":  ("GET / HTTP/1.1\r\nHost: " + host + "\r\nOrigin: " + origin + "\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*"),
+                    "response_raw": ("HTTP/1.1 (see headers)\r\n" + "\r\n".join(k + ": " + v for k, v in hdrs.items() if k.lower() != "set-cookie") + "\r\n\r\n" + body_snip[:600]),
+                    "matched": acao,
                 }
                 if worst is None or SEV_ORDER.get(sev, 4) < SEV_ORDER.get(worst["severity"], 4):
                     worst = candidate
@@ -6935,6 +6939,9 @@ def run_infra_exposure(hosts: list) -> dict:
                     ),
                     "open_paths": accessible_paths,
                     "url": f"http://{ip}:{port}",
+                                    "request_raw":  ("GET " + (_fp.get("path", "/") if (_fp := (accessible_paths[0] if accessible_paths else {})) else "/") + " HTTP/1.1\r\nHost: " + ip + ":" + str(port) + "\r\nUser-Agent: Mozilla/5.0") if accessible_paths else "",
+                    "response_raw": ("HTTP/1.1 " + str(accessible_paths[0].get("status","")) + "\r\n\r\n" + accessible_paths[0].get("preview","")) if accessible_paths else "",
+                    "matched":      service,
                 })
 
     return {
@@ -7443,6 +7450,13 @@ def run_host_header_injection(hosts: list) -> dict:
                     status, body, resp_h = http_get(url, timeout=8, retries=1, extra_headers=extra)
                     body_str = (body or b"")[:3000].decode("utf-8", "ignore")
 
+                    _hhi_req = (
+                        "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\n"
+                        + inj_header + ": " + _POISON_DOMAIN + "\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*"
+                    )
+                    _hhi_resp_base = ("HTTP/1.1 " + str(status) + "\r\n"
+                        + "\r\n".join(k + ": " + v for k, v in (resp_h or {}).items() if k.lower() != "set-cookie"))
+
                     # Reflection in body
                     if _POISON_DOMAIN in body_str:
                         key = f"hhi-{host}-{inj_header}"
@@ -7454,10 +7468,13 @@ def run_host_header_injection(hosts: list) -> dict:
                             "category": "injection",
                             "desc":     (
                                 f"`{inj_header}: {_POISON_DOMAIN}` reflected in response body at {url}. "
-                                f"Password reset links may use poisoned domain â€” phishing / account takeover possible."
+                                "Password reset links may use poisoned domain -- phishing / account takeover possible."
                             ),
                             "url":      url,
                             "metadata": {"header": inj_header, "path": path, "reflection": "body"},
+                            "request_raw":  _hhi_req,
+                            "response_raw": _hhi_resp_base + "\r\n\r\n" + body_str[:500],
+                            "matched":      _POISON_DOMAIN,
                         })
                         break
 
@@ -7473,10 +7490,13 @@ def run_host_header_injection(hosts: list) -> dict:
                             "category": "injection",
                             "desc":     (
                                 f"`{inj_header}: {_POISON_DOMAIN}` reflected in Location header: {loc}. "
-                                f"Open redirect via host header injection â€” immediate password reset poisoning risk."
+                                "Open redirect via host header injection -- immediate password reset poisoning risk."
                             ),
                             "url":      url,
                             "metadata": {"header": inj_header, "path": path, "location": loc, "reflection": "redirect"},
+                            "request_raw":  _hhi_req,
+                            "response_raw": _hhi_resp_base,
+                            "matched":      _POISON_DOMAIN,
                         })
                         break
                 except Exception:
@@ -7570,6 +7590,7 @@ def run_open_redirect_check(hosts: list, urls: list | None = None) -> dict:
                 if loc and _REDIRECT_DOMAIN in loc:
                     host_name = url.split("/")[2].split("?")[0]
                     key = f"openredirect-{host_name}-{url[:80]}"
+                    _or_path = url.split(host_name, 1)[-1].split("#")[0] or "/"
                     findings.append({
                         "type":     "open_redirect",
                         "host":     host_name,
@@ -7577,12 +7598,15 @@ def run_open_redirect_check(hosts: list, urls: list | None = None) -> dict:
                         "severity": "medium",
                         "category": "injection",
                         "desc":     (
-                            f"Redirect parameter accepted external domain. "
-                            f"URL: {url[:200]} â†’ Location: {loc[:200]}. "
-                            f"Can be abused for phishing, OAuth token theft."
+                            "Redirect parameter accepted external domain. "
+                            "URL: " + url[:200] + " -> Location: " + loc[:200] + ". "
+                            "Can be abused for phishing, OAuth token theft."
                         ),
                         "url":      url,
                         "metadata": {"payload": payload, "location": loc},
+                        "request_raw":  ("GET " + _or_path + " HTTP/1.1\r\nHost: " + host_name + "\r\nUser-Agent: Mozilla/5.0\r\nAccept: */*"),
+                        "response_raw": ("HTTP/1.1 " + str(status) + "\r\nLocation: " + loc),
+                        "matched":      _REDIRECT_DOMAIN,
                     })
                     break  # one finding per URL template is enough
             except Exception:
