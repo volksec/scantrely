@@ -96,6 +96,12 @@
     <button class="nav-item" id="nav-exttools" onclick="showPage('exttools')">
       <span class="nav-icon">✦</span> <span data-i18n-key="nav_exttools">External Tools</span>
     </button>
+    <button class="nav-item" id="nav-bbprograms" onclick="showPage('bbprograms')">
+      <span class="nav-icon">🏆</span> <span data-i18n-key="nav_bbprograms">Bug Bounty Programs</span>
+    </button>
+    <button class="nav-item" id="nav-generators" onclick="showPage('generators')">
+      <span class="nav-icon">⚙️</span> <span data-i18n-key="nav_generators">Geradores</span>
+    </button>
     <button class="nav-item" onclick="showPage('settings')">
       <span class="nav-icon">⚙</span> <span data-i18n-key="nav_settings">API Keys</span>
     </button>
@@ -416,6 +422,14 @@
         <div class="page-desc" data-i18n-key="ext_desc">One-click shortcuts to external recon, OSINT and utility tools used during bug bounty engagements.</div>
       </div>
       <div id="ext-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px"></div>
+    </div>
+
+    <!-- BUG BOUNTY PROGRAMS VIEW -->
+    <div id="view-bbprograms" class="view">
+    </div>
+
+    <!-- GENERATORS VIEW -->
+    <div id="view-generators" class="view">
     </div>
 
     <!-- ADMINS VIEW -->
@@ -750,9 +764,11 @@
 <script src="js/asm.js"></script>
 <script src="js/api.js"></script>
 <script src="js/bugbounty.js?v=2"></script>
+<script src="js/bbprograms.js?v=1"></script>
+<script src="js/generators.js?v=1"></script>
 
 <!-- ── Optional: load generated data from parser ── -->
-<script src="dashboard.js?v=57"></script>
+<script src="dashboard.js?v=58"></script>
 
 </body>
 </html>

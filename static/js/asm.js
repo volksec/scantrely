@@ -239,6 +239,10 @@
       if (typeof showPage === 'function') showPage('bbhelper');
     } else if (parts[0] === 'exttools') {
       if (typeof showPage === 'function') showPage('exttools');
+    } else if (parts[0] === 'bbprograms') {
+      if (typeof showPage === 'function') showPage('bbprograms');
+    } else if (parts[0] === 'generators') {
+      if (typeof showPage === 'function') showPage('generators');
     }
   }
 

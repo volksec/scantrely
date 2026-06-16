@@ -594,10 +594,12 @@ function _syncSidebarActive() {
     companies: "nav-all",
     jobs: "nav-jobs",
     tools: "nav-tools",
-    bbhelper: "nav-bbhelper",
-    exttools: "nav-exttools",
-    admins: "nav-admins",
-    runtime: "nav-runtime",
+    bbhelper:    "nav-bbhelper",
+    exttools:    "nav-exttools",
+    bbprograms:  "nav-bbprograms",
+    generators:  "nav-generators",
+    admins:      "nav-admins",
+    runtime:     "nav-runtime",
   };
   if (page === "company" && state.currentId) {
     document.querySelectorAll(".nav-co").forEach(el => {
@@ -6170,6 +6172,28 @@ function showPage(page) {
     _crumb('crumb_exttools');
     if (typeof showExtToolsPage === 'function') showExtToolsPage();
     if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('exttools');
+  } else if (page === "bbprograms") {
+    state.page = "bbprograms";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-bbprograms").classList.add("active");
+    _syncSidebarActive();
+    _crumb('crumb_bbprograms');
+    if (typeof showBBProgramsPage === 'function') showBBProgramsPage();
+    _i18n();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('bbprograms');
+  } else if (page === "generators") {
+    state.page = "generators";
+    state.currentId = null;
+    stopLiveDataPolling();
+    document.body.classList.remove("executive-home");
+    document.getElementById("view-generators").classList.add("active");
+    _syncSidebarActive();
+    _crumb('crumb_generators');
+    if (typeof showGeneratorsPage === 'function') showGeneratorsPage();
+    _i18n();
+    if (typeof ASM !== 'undefined' && ASM.updateHash) ASM.updateHash('generators');
   }
 }
 

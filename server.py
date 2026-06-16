@@ -338,35 +338,201 @@ def _filter_asm_data_by_scope(data: dict) -> dict:
 
 @app.route("/")
 def index():
-    return (BASE / "static" / "index.html").read_text(), 200, {"Content-Type": "text/html; charset=utf-8"}
+    return (BASE / "static" / "index.html").read_text(encoding="utf-8"), 200, {"Content-Type": "text/html; charset=utf-8"}
 
 @app.route("/dashboard.css")
 def serve_dashboard_css():
-    return (BASE / "static" / "css" / "dashboard.css").read_text(), 200, {"Content-Type": "text/css; charset=utf-8"}
+    return (BASE / "static" / "css" / "dashboard.css").read_text(encoding="utf-8"), 200, {"Content-Type": "text/css; charset=utf-8"}
 
 @app.route("/dashboard.js")
 def serve_dashboard_js():
-    return (BASE / "static" / "js" / "dashboard.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "dashboard.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
 @app.route("/js/asm.js")
 def serve_asm_js():
-    return (BASE / "static" / "js" / "asm.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "asm.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
 @app.route("/js/api.js")
 def serve_api_js():
-    return (BASE / "static" / "js" / "api.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "api.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
 @app.route("/js/config.js")
 def serve_config_js():
-    return (BASE / "static" / "js" / "config.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "config.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
 @app.route("/js/i18n.js")
 def serve_i18n_js():
-    return (BASE / "static" / "js" / "i18n.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "i18n.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
 
 @app.route("/js/bugbounty.js")
 def serve_bugbounty_js():
-    return (BASE / "static" / "js" / "bugbounty.js").read_text(), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+    return (BASE / "static" / "js" / "bugbounty.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+
+@app.route("/js/bbprograms.js")
+def serve_bbprograms_js():
+    return (BASE / "static" / "js" / "bbprograms.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+
+@app.route("/js/generators.js")
+def serve_generators_js():
+    return (BASE / "static" / "js" / "generators.js").read_text(encoding="utf-8"), 200, {"Content-Type": "application/javascript; charset=utf-8"}
+
+# ─── Bug Bounty Programs API proxy ────────────────────────────────────
+
+@app.route("/api/bbprograms/hackerone")
+@require_auth
+def bbprograms_hackerone():
+    """Proxy para a API pública do HackerOne. Requer hackerone_username + hackerone_token nas settings."""
+    from urllib.request import urlopen, Request as UrlRequest
+    from urllib.error import URLError, HTTPError
+    import base64
+
+    settings = _get_settings()
+    username = settings.get("hackerone_username", "")
+    token    = settings.get("hackerone_token", "")
+
+    page = request.args.get("page", "1")
+    q    = request.args.get("q", "")
+
+    if not username or not token:
+        # Return demo data so the tab is usable without credentials
+        return jsonify(_bbp_demo_hackerone())
+
+    creds = base64.b64encode(f"{username}:{token}".encode()).decode()
+    url = f"https://api.hackerone.com/v1/hackers/programs?page[number]={page}&page[size]=25"
+    if q:
+        url += f"&filter[name]={q}"
+
+    try:
+        req = UrlRequest(url, headers={
+            "Authorization": f"Basic {creds}",
+            "Accept": "application/json",
+            "User-Agent": "SCANTRELY/1.0",
+        })
+        with urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read().decode())
+    except HTTPError as e:
+        if e.code in (401, 403):
+            return jsonify({"error": "Credenciais inválidas ou permissão negada", "demo": True, **_bbp_demo_hackerone()}), 200
+        return jsonify({"error": f"HackerOne API error: {e.code} {e.reason}"}), 502
+    except URLError as e:
+        return jsonify({"error": f"Erro de conexão: {e.reason}"}), 502
+    except Exception as e:
+        return jsonify({"error": str(e)}), 502
+
+    # Normalize response
+    data = raw.get("data", [])
+    programs = []
+    for item in data:
+        attrs = item.get("attributes", {})
+        programs.append({
+            "id":            item.get("id", ""),
+            "handle":        attrs.get("handle", ""),
+            "name":          attrs.get("name", ""),
+            "state":         attrs.get("state", ""),
+            "offers_bounties": attrs.get("offers_bounties", False),
+            "min_bounty_table_value": attrs.get("minimum_bounty_table_value", 0),
+            "max_bounty_table_value": attrs.get("maximum_bounty_table_value", 0),
+            "profile_picture_urls": attrs.get("profile_picture_urls", {}),
+            "statistics":    attrs.get("statistics", {}),
+            "in_scope":      attrs.get("structured_policy_data", {}).get("in_scope", []),
+            "platform":      "hackerone",
+        })
+
+    links = raw.get("links", {})
+    has_next = bool(links.get("next"))
+    return jsonify({
+        "programs":    programs,
+        "total_pages": int(page) + (1 if has_next else 0),
+        "demo":        False,
+    })
+
+
+@app.route("/api/bbprograms/bugcrowd")
+@require_auth
+def bbprograms_bugcrowd():
+    """Proxy para API pública do Bugcrowd."""
+    from urllib.request import urlopen, Request as UrlRequest
+    from urllib.error import URLError, HTTPError
+    import base64
+
+    settings  = _get_settings()
+    email     = settings.get("bugcrowd_email", "")
+    bc_token  = settings.get("bugcrowd_token", "")
+
+    page = int(request.args.get("page", "1"))
+    q    = request.args.get("q", "").strip()
+
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "SCANTRELY/1.0",
+    }
+    if email and bc_token:
+        creds = base64.b64encode(f"{email}:{bc_token}".encode()).decode()
+        headers["Authorization"] = f"Basic {creds}"
+
+    offset = (page - 1) * 25
+    url = f"https://bugcrowd.com/programs.json?offset={offset}&limit=25"
+
+    try:
+        req = UrlRequest(url, headers=headers)
+        with urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read().decode())
+    except HTTPError as e:
+        if e.code in (401, 403):
+            return jsonify(_bbp_demo_bugcrowd()), 200
+        return jsonify(_bbp_demo_bugcrowd()), 200
+    except Exception:
+        return jsonify(_bbp_demo_bugcrowd()), 200
+
+    programs = []
+    for p in (raw if isinstance(raw, list) else raw.get("programs", raw.get("data", []))):
+        programs.append({
+            "id":            p.get("id", ""),
+            "handle":        p.get("code", p.get("handle", "")),
+            "name":          p.get("name", p.get("company_name", "")),
+            "state":         "public_mode" if p.get("access_level") == "open" else "soft_launch",
+            "offers_bounties": bool(p.get("max_reward") or p.get("rewards_count")),
+            "min_bounty_table_value": p.get("min_reward", 0),
+            "max_bounty_table_value": p.get("max_reward", 0),
+            "profile_picture_urls": {"small": p.get("logo", "")},
+            "statistics":    {"resolved_report_count": p.get("rewards_count", 0)},
+            "in_scope":      [{"asset_type": t} for t in (p.get("target_types") or [])],
+            "platform":      "bugcrowd",
+        })
+
+    return jsonify({
+        "programs":    programs,
+        "total_pages": max(1, page + (1 if len(programs) >= 25 else 0)),
+        "demo":        False,
+    })
+
+
+def _bbp_demo_hackerone():
+    """Dados de demonstração quando credenciais não configuradas."""
+    demo = [
+        {"handle":"hackerone","name":"HackerOne","state":"public_mode","offers_bounties":True,"min_bounty_table_value":500,"max_bounty_table_value":20000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":12400},"in_scope":[{"asset_type":"URL"},{"asset_type":"WILDCARD"}],"platform":"hackerone"},
+        {"handle":"google","name":"Google VRP","state":"public_mode","offers_bounties":True,"min_bounty_table_value":100,"max_bounty_table_value":31337,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":4200},"in_scope":[{"asset_type":"URL"},{"asset_type":"ANDROID"}],"platform":"hackerone"},
+        {"handle":"microsoft","name":"Microsoft","state":"public_mode","offers_bounties":True,"min_bounty_table_value":500,"max_bounty_table_value":250000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":3800},"in_scope":[{"asset_type":"URL"},{"asset_type":"WINDOWS"}],"platform":"hackerone"},
+        {"handle":"uber","name":"Uber","state":"public_mode","offers_bounties":True,"min_bounty_table_value":500,"max_bounty_table_value":10000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":1200},"in_scope":[{"asset_type":"URL"},{"asset_type":"IOS"},{"asset_type":"ANDROID"}],"platform":"hackerone"},
+        {"handle":"shopify","name":"Shopify","state":"public_mode","offers_bounties":True,"min_bounty_table_value":500,"max_bounty_table_value":50000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":2100},"in_scope":[{"asset_type":"URL"},{"asset_type":"WILDCARD"}],"platform":"hackerone"},
+        {"handle":"github","name":"GitHub","state":"public_mode","offers_bounties":True,"min_bounty_table_value":617,"max_bounty_table_value":30000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":1500},"in_scope":[{"asset_type":"URL"}],"platform":"hackerone"},
+        {"handle":"twitter","name":"X (Twitter)","state":"public_mode","offers_bounties":True,"min_bounty_table_value":140,"max_bounty_table_value":15000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":890},"in_scope":[{"asset_type":"URL"},{"asset_type":"WILDCARD"}],"platform":"hackerone"},
+        {"handle":"spotify","name":"Spotify","state":"public_mode","offers_bounties":True,"min_bounty_table_value":250,"max_bounty_table_value":4000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":420},"in_scope":[{"asset_type":"URL"},{"asset_type":"IOS"},{"asset_type":"ANDROID"}],"platform":"hackerone"},
+    ]
+    return {"programs": demo, "total_pages": 1, "demo": True}
+
+
+def _bbp_demo_bugcrowd():
+    demo = [
+        {"handle":"tesla","name":"Tesla","state":"public_mode","offers_bounties":True,"min_bounty_table_value":100,"max_bounty_table_value":15000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":650},"in_scope":[{"asset_type":"URL"},{"asset_type":"HARDWARE"}],"platform":"bugcrowd"},
+        {"handle":"netgear","name":"NETGEAR","state":"public_mode","offers_bounties":True,"min_bounty_table_value":150,"max_bounty_table_value":7500,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":300},"in_scope":[{"asset_type":"HARDWARE"},{"asset_type":"FIRMWARE"}],"platform":"bugcrowd"},
+        {"handle":"instructure","name":"Instructure","state":"public_mode","offers_bounties":True,"min_bounty_table_value":300,"max_bounty_table_value":5000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":200},"in_scope":[{"asset_type":"URL"}],"platform":"bugcrowd"},
+        {"handle":"snapchat","name":"Snap Inc.","state":"public_mode","offers_bounties":True,"min_bounty_table_value":2000,"max_bounty_table_value":30000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":1100},"in_scope":[{"asset_type":"URL"},{"asset_type":"IOS"},{"asset_type":"ANDROID"}],"platform":"bugcrowd"},
+        {"handle":"arlo","name":"Arlo","state":"public_mode","offers_bounties":True,"min_bounty_table_value":100,"max_bounty_table_value":5000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":180},"in_scope":[{"asset_type":"HARDWARE"},{"asset_type":"URL"}],"platform":"bugcrowd"},
+        {"handle":"square","name":"Block (Square)","state":"public_mode","offers_bounties":True,"min_bounty_table_value":500,"max_bounty_table_value":25000,"profile_picture_urls":{"small":""},"statistics":{"resolved_report_count":920},"in_scope":[{"asset_type":"URL"},{"asset_type":"IOS"},{"asset_type":"ANDROID"}],"platform":"bugcrowd"},
+    ]
+    return {"programs": demo, "total_pages": 1, "demo": True}
+
 
 @app.route("/favicon.ico")
 def serve_favicon():
@@ -704,6 +870,7 @@ def _load_hosts_for_company(cid: str) -> list:
     return []
 
 _SETTINGS_KEYS = {
+    "hackerone_username", "hackerone_token", "bugcrowd_email", "bugcrowd_token",
     "shodan_key", "github_token", "hibp_key", "dehashed_key",
     "censys_api_id", "censys_api_secret", "securitytrails_key",
     "virustotal_key", "binaryedge_key", "fullhunt_key",
