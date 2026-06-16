@@ -1,5 +1,5 @@
 // ════════════════════════════════════════════════════════════════════════
-//  BUG BOUNTY PROGRAMS MODULE — HackerOne & Bugcrowd integration
+//  BUG BOUNTY PROGRAMS MODULE — HackerOne & Bugcrowd (real data only)
 // ════════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -9,11 +9,39 @@ let _bbpPage     = { hackerone: 1, bugcrowd: 1 };
 let _bbpSearch   = '';
 let _bbpLoading  = false;
 
-// ─── Main entry ──────────────────────────────────────────────────────
+// ── Platform meta ────────────────────────────────────────────────────────
+const _BBP_META = {
+  hackerone: {
+    label: 'HackerOne',
+    icon: '🟢',
+    settingsKeys: ['hackerone_username', 'hackerone_token'],
+    setupSteps: [
+      'Acesse <a href="https://hackerone.com/settings/api_token_v2" target="_blank" rel="noopener" class="bbp-link">hackerone.com/settings/api_token_v2</a>',
+      'Gere um novo token de API com permissão de leitura de programas',
+      'Copie seu <strong>Username</strong> (não o e-mail) e o <strong>Token</strong>',
+      'Cole em <button class="btn btn-primary btn-sm" onclick="showPage(\'settings\')">⚙️ Configurações → API Keys</button> nos campos <code>hackerone_username</code> e <code>hackerone_token</code>',
+    ],
+    docsUrl: 'https://api.hackerone.com/',
+  },
+  bugcrowd: {
+    label: 'Bugcrowd',
+    icon: '🟠',
+    settingsKeys: ['bugcrowd_email', 'bugcrowd_token'],
+    setupSteps: [
+      'Acesse <a href="https://bugcrowd.com/user/settings/api" target="_blank" rel="noopener" class="bbp-link">bugcrowd.com/user/settings/api</a>',
+      'Gere um novo API token',
+      'Copie seu <strong>E-mail</strong> e o <strong>Token</strong>',
+      'Cole em <button class="btn btn-primary btn-sm" onclick="showPage(\'settings\')">⚙️ Configurações → API Keys</button> nos campos <code>bugcrowd_email</code> e <code>bugcrowd_token</code>',
+    ],
+    docsUrl: 'https://docs.bugcrowd.com/api/getting-started/',
+  },
+};
+
+// ── Main entry ────────────────────────────────────────────────────────────
 function showBBProgramsPage() {
   const view = document.getElementById('view-bbprograms');
-  if(!view) return;
-  if(document.getElementById('bbp-main')) {
+  if (!view) return;
+  if (document.getElementById('bbp-main')) {
     _bbpRefreshView();
     return;
   }
@@ -21,11 +49,10 @@ function showBBProgramsPage() {
     <div class="bbp-header">
       <div>
         <div class="page-title">🏆 Bug Bounty Programs</div>
-        <div class="page-desc">Explore programas de Bug Bounty de HackerOne e Bugcrowd sem sair da plataforma.</div>
+        <div class="page-desc">Explore programas reais de Bug Bounty do HackerOne e Bugcrowd sem sair da plataforma.</div>
       </div>
     </div>
 
-    <!-- Platform tabs -->
     <div class="bbp-platform-tabs">
       <button class="bbp-tab active" id="bbp-tab-hackerone" onclick="bbpSwitchPlatform('hackerone')">
         <img src="https://www.hackerone.com/favicon.ico" onerror="this.style.display='none'" style="width:16px;height:16px;border-radius:2px">
@@ -37,8 +64,7 @@ function showBBProgramsPage() {
       </button>
     </div>
 
-    <!-- Toolbar -->
-    <div class="bbp-toolbar">
+    <div class="bbp-toolbar" id="bbp-toolbar" style="display:none">
       <div class="bbp-search-wrap">
         <input type="text" id="bbp-search-input" placeholder="Pesquisar programas..."
                oninput="bbpOnSearch()" autocomplete="off" class="bbp-search-field">
@@ -58,17 +84,8 @@ function showBBProgramsPage() {
       </div>
     </div>
 
-    <!-- Credentials notice -->
-    <div id="bbp-creds-notice" class="bbp-notice" style="display:none">
-      <span>⚙️ Configure as credenciais da API em</span>
-      <button class="btn btn-secondary btn-sm" onclick="showPage('settings')">API Keys</button>
-      <span>para acessar dados em tempo real. Campos: <b>hackerone_username</b> e <b>hackerone_token</b></span>
-    </div>
+    <div id="bbp-main"></div>
 
-    <!-- Programs grid -->
-    <div id="bbp-main" class="bbp-programs-grid"></div>
-
-    <!-- Pagination -->
     <div class="bbp-pagination" id="bbp-pagination" style="display:none">
       <button class="btn btn-secondary" id="bbp-prev-btn" onclick="bbpChangePage(-1)">← Anterior</button>
       <span id="bbp-page-info" style="color:var(--text3)">Página 1</span>
@@ -78,7 +95,7 @@ function showBBProgramsPage() {
   bbpLoad();
 }
 
-// ─── Platform switch ─────────────────────────────────────────────────
+// ── Platform switch ────────────────────────────────────────────────────────
 function bbpSwitchPlatform(platform) {
   _bbpPlatform = platform;
   document.querySelectorAll('.bbp-tab').forEach(t => t.classList.remove('active'));
@@ -86,11 +103,11 @@ function bbpSwitchPlatform(platform) {
   _bbpPage[platform] = 1;
   _bbpSearch = '';
   const inp = document.getElementById('bbp-search-input');
-  if(inp) inp.value = '';
+  if (inp) inp.value = '';
   bbpLoad();
 }
 
-// ─── Search ──────────────────────────────────────────────────────────
+// ── Search ─────────────────────────────────────────────────────────────────
 let _bbpSearchTimer = null;
 function bbpOnSearch() {
   clearTimeout(_bbpSearchTimer);
@@ -106,142 +123,219 @@ function bbpApplyFilter() {
   _bbpApplyClientFilter();
 }
 
-// ─── Load data ───────────────────────────────────────────────────────
+// ── Load ───────────────────────────────────────────────────────────────────
 async function bbpLoad(force = false) {
-  if(_bbpLoading) return;
+  if (_bbpLoading) return;
   _bbpLoading = true;
   const main = document.getElementById('bbp-main');
-  if(!main) { _bbpLoading = false; return; }
+  const toolbar = document.getElementById('bbp-toolbar');
+  const pag = document.getElementById('bbp-pagination');
+  if (!main) { _bbpLoading = false; return; }
 
   main.innerHTML = `
     <div class="bbp-loading">
       <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
-      <span>Carregando programas...</span>
+      <span>Verificando configuração...</span>
     </div>`;
+  if (toolbar) toolbar.style.display = 'none';
+  if (pag) pag.style.display = 'none';
 
   try {
     const page = _bbpPage[_bbpPlatform];
-    const q = encodeURIComponent(_bbpSearch);
-    const url = `/api/bbprograms/${_bbpPlatform}?page=${page}&q=${q}`;
-    const resp = await fetch(url, { headers: _authHeaders ? _authHeaders() : {} });
+    const q    = encodeURIComponent(_bbpSearch);
+    const resp = await fetch(`/api/bbprograms/${_bbpPlatform}?page=${page}&q=${q}`, {
+      headers: typeof _authHeaders === 'function' ? _authHeaders() : {},
+    });
 
-    if(resp.status === 401 || resp.status === 403) {
-      _bbpShowCredsNotice(true);
-      main.innerHTML = `<div class="bbp-empty">🔑 Credenciais não configuradas. Configure em <strong>API Keys</strong>.</div>`;
+    if (resp.status === 401 || resp.status === 403) {
+      _bbpRenderSetup();
       _bbpLoading = false; return;
     }
 
-    if(!resp.ok) {
-      const err = await resp.json().catch(() => ({error: resp.statusText}));
-      throw new Error(err.error || resp.statusText);
+    const data = await resp.json();
+
+    if (data.no_creds) {
+      _bbpRenderSetup();
+      _bbpLoading = false; return;
     }
 
-    const data = await resp.json();
+    if (data.auth_error) {
+      _bbpRenderAuthError(data.error || 'Credenciais inválidas.');
+      _bbpLoading = false; return;
+    }
+
+    if (!resp.ok || data.error) {
+      main.innerHTML = `<div class="bbp-empty">⚠️ ${_bbpEsc(data.error || 'Erro desconhecido')}</div>`;
+      _bbpLoading = false; return;
+    }
+
     _bbpData[_bbpPlatform] = data;
-    _bbpShowCredsNotice(data.demo === true);
+    if (toolbar) toolbar.style.display = '';
     _bbpRender(data);
-  } catch(e) {
-    main.innerHTML = `<div class="bbp-empty">⚠️ Erro ao carregar: ${e.message}</div>`;
+  } catch (e) {
+    main.innerHTML = `<div class="bbp-empty">⚠️ Erro ao carregar: ${_bbpEsc(e.message)}</div>`;
   } finally {
     _bbpLoading = false;
   }
 }
 
-// ─── Apply client-side filter on cached data ─────────────────────────
+// ── No-credentials empty state ─────────────────────────────────────────────
+function _bbpRenderSetup() {
+  const meta = _BBP_META[_bbpPlatform];
+  const steps = meta.setupSteps.map((s, i) => `
+    <div class="bbp-setup-step">
+      <span class="bbp-setup-num">${i + 1}</span>
+      <span>${s}</span>
+    </div>`).join('');
+
+  document.getElementById('bbp-main').innerHTML = `
+    <div class="bbp-setup-card">
+      <div class="bbp-setup-icon">${meta.icon}</div>
+      <h3 class="bbp-setup-title">Configure a API do ${_bbpEsc(meta.label)}</h3>
+      <p class="bbp-setup-desc">
+        Para visualizar programas reais de Bug Bounty, você precisa configurar suas credenciais de API.
+        Sem a chave, nenhum dado é exibido.
+      </p>
+      <div class="bbp-setup-steps">${steps}</div>
+      <div class="bbp-setup-actions">
+        <button class="btn btn-primary" onclick="showPage('settings')">⚙️ Ir para Configurações</button>
+        <a href="${meta.docsUrl}" target="_blank" rel="noopener" class="btn btn-secondary">📖 Documentação da API</a>
+      </div>
+      <div class="bbp-setup-note">
+        Suas credenciais são armazenadas localmente e nunca compartilhadas.
+        Após configurar, clique em <strong>↻ Atualizar</strong> para carregar os programas.
+      </div>
+    </div>`;
+  const pag = document.getElementById('bbp-pagination');
+  if (pag) pag.style.display = 'none';
+}
+
+// ── Auth error state ───────────────────────────────────────────────────────
+function _bbpRenderAuthError(msg) {
+  const meta = _BBP_META[_bbpPlatform];
+  document.getElementById('bbp-main').innerHTML = `
+    <div class="bbp-setup-card bbp-setup-card--error">
+      <div class="bbp-setup-icon">🔑</div>
+      <h3 class="bbp-setup-title">Credenciais inválidas</h3>
+      <p class="bbp-setup-desc">${_bbpEsc(msg)}</p>
+      <div class="bbp-setup-actions">
+        <button class="btn btn-primary" onclick="showPage('settings')">⚙️ Corrigir em Configurações</button>
+        <a href="${meta.docsUrl}" target="_blank" rel="noopener" class="btn btn-secondary">📖 Documentação</a>
+      </div>
+    </div>`;
+}
+
+// ── Apply client-side filter on cached data ───────────────────────────────
 function _bbpApplyClientFilter() {
   const data = _bbpData[_bbpPlatform];
-  if(!data) { bbpLoad(true); return; }
+  if (!data) { bbpLoad(true); return; }
   _bbpRender(data);
 }
 
 function _bbpRefreshView() {
   const data = _bbpData[_bbpPlatform];
-  if(data) _bbpRender(data);
+  if (data) _bbpRender(data);
   else bbpLoad();
 }
 
-// ─── Render programs ─────────────────────────────────────────────────
+// ── Render programs grid ───────────────────────────────────────────────────
 function _bbpRender(data) {
   const main = document.getElementById('bbp-main');
-  if(!main) return;
+  if (!main) return;
 
   let programs = data.programs || [];
-  const totalPages = data.total_pages || 1;
+  const totalPages  = data.total_pages || 1;
   const currentPage = _bbpPage[_bbpPlatform];
 
-  // Client-side filters
-  const search = _bbpSearch.toLowerCase();
+  const search      = _bbpSearch.toLowerCase();
   const bountyFilter = document.getElementById('bbp-filter-bounty')?.value || '';
   const typeFilter   = document.getElementById('bbp-filter-type')?.value   || '';
 
-  if(search) programs = programs.filter(p => (p.name||'').toLowerCase().includes(search) || (p.handle||'').toLowerCase().includes(search));
-  if(bountyFilter === 'paid') programs = programs.filter(p => p.offers_bounties);
-  if(bountyFilter === 'vdp')  programs = programs.filter(p => !p.offers_bounties);
-  if(typeFilter === 'public')  programs = programs.filter(p => p.state === 'public_mode' || p.access_level === 'open');
-  if(typeFilter === 'private') programs = programs.filter(p => p.state === 'soft_launch' || p.access_level === 'invite_only');
+  if (search)
+    programs = programs.filter(p =>
+      (p.name || '').toLowerCase().includes(search) ||
+      (p.handle || '').toLowerCase().includes(search));
+  if (bountyFilter === 'paid') programs = programs.filter(p => p.offers_bounties);
+  if (bountyFilter === 'vdp')  programs = programs.filter(p => !p.offers_bounties);
+  if (typeFilter === 'public')  programs = programs.filter(p => p.state === 'public_mode'  || p.access_level === 'open');
+  if (typeFilter === 'private') programs = programs.filter(p => p.state === 'soft_launch'  || p.access_level === 'invite_only');
 
-  if(!programs.length) {
-    main.innerHTML = `<div class="bbp-empty">Nenhum programa encontrado. Tente alterar os filtros.</div>`;
+  if (!programs.length) {
+    main.innerHTML = `<div class="bbp-empty">Nenhum programa encontrado com os filtros atuais.</div>`;
     _bbpUpdatePagination(0, 1, 1);
     return;
   }
 
-  main.innerHTML = programs.map(p => _bbpProgramCard(p)).join('');
+  main.innerHTML = `<div class="bbp-programs-grid">${programs.map(p => _bbpProgramCard(p)).join('')}</div>`;
   _bbpUpdatePagination(programs.length, currentPage, totalPages);
 }
 
 function _bbpProgramCard(p) {
-  const isH1 = _bbpPlatform === 'hackerone';
-  const name = p.name || p.company_name || 'Unknown';
-  const handle = p.handle || p.code || '';
-  const bounty = p.offers_bounties || p.allows_disclosure;
-  const logoUrl = p.profile_picture_urls?.small || p.logo || '';
-  const minBounty = p.min_bounty_table_value || p.bounty_min || 0;
-  const maxBounty = p.max_bounty_table_value || p.bounty_max || 0;
-  const state = p.state || p.access_level || '';
-  const isPublic = state === 'public_mode' || state === 'open';
-  const url = isH1
+  const isH1       = _bbpPlatform === 'hackerone';
+  const name       = p.name || p.company_name || 'Unknown';
+  const handle     = p.handle || p.code || '';
+  const bounty     = p.offers_bounties || p.allows_disclosure;
+  const logoUrl    = p.profile_picture_urls?.small || p.logo || '';
+  const minBounty  = p.min_bounty_table_value || p.bounty_min || 0;
+  const maxBounty  = p.max_bounty_table_value || p.bounty_max || 0;
+  const state      = p.state || p.access_level || '';
+  const isPublic   = state === 'public_mode' || state === 'open';
+  const url        = isH1
     ? `https://hackerone.com/${handle}`
     : `https://bugcrowd.com/${handle}`;
-  const stats = p.statistics || {};
-  const resolved = stats.resolved_report_count || p.total_rewards_given || 0;
-  const submitted = stats.submitted_report_count || '';
-  const scopes = (p.in_scope || []).map(s => s.asset_type || s.type || '').filter((v,i,a) => v && a.indexOf(v)===i).slice(0,4);
+  const stats      = p.statistics || {};
+  const resolved   = stats.resolved_report_count || p.total_rewards_given || 0;
+  const submitted  = stats.submitted_report_count || '';
+  const scopes     = (p.in_scope || [])
+    .map(s => s.asset_type || s.type || '')
+    .filter((v, i, a) => v && a.indexOf(v) === i)
+    .slice(0, 4);
 
   return `
     <a href="${url}" target="_blank" rel="noopener noreferrer" class="bbp-program-card">
       <div class="bbp-card-header">
         <div class="bbp-card-logo">
-          ${logoUrl ? `<img src="${logoUrl}" alt="${name}" onerror="this.style.display='none'">` : `<span>${name.charAt(0)}</span>`}
+          ${logoUrl
+            ? `<img src="${logoUrl}" alt="${_bbpEsc(name)}" onerror="this.style.display='none'">`
+            : `<span>${name.charAt(0)}</span>`}
         </div>
         <div class="bbp-card-info">
           <div class="bbp-card-name">${_bbpEsc(name)}</div>
           <div class="bbp-card-handle">@${_bbpEsc(handle)}</div>
         </div>
         <div class="bbp-card-badges">
-          ${bounty ? `<span class="bbp-badge bbp-badge-bounty">💰 Recompensa</span>` : `<span class="bbp-badge bbp-badge-vdp">VDP</span>`}
-          ${isPublic ? `<span class="bbp-badge bbp-badge-public">🌐 Público</span>` : `<span class="bbp-badge bbp-badge-private">🔒 Privado</span>`}
+          ${bounty
+            ? `<span class="bbp-badge bbp-badge-bounty">💰 Recompensa</span>`
+            : `<span class="bbp-badge bbp-badge-vdp">VDP</span>`}
+          ${isPublic
+            ? `<span class="bbp-badge bbp-badge-public">🌐 Público</span>`
+            : `<span class="bbp-badge bbp-badge-private">🔒 Privado</span>`}
         </div>
       </div>
       ${(minBounty || maxBounty) ? `
         <div class="bbp-card-bounty">
           💵 ${minBounty ? '$' + _bbpFmt(minBounty) : '—'} – ${maxBounty ? '$' + _bbpFmt(maxBounty) : '—'}
         </div>` : ''}
-      ${scopes.length ? `<div class="bbp-card-scopes">${scopes.map(s=>`<span class="bbp-scope-tag">${_bbpEsc(s)}</span>`).join('')}</div>` : ''}
-      ${resolved ? `<div class="bbp-card-stats">✓ ${_bbpFmt(resolved)} resolvidos${submitted ? ' · ' + _bbpFmt(submitted) + ' enviados' : ''}</div>` : ''}
+      ${scopes.length
+        ? `<div class="bbp-card-scopes">${scopes.map(s => `<span class="bbp-scope-tag">${_bbpEsc(s)}</span>`).join('')}</div>`
+        : ''}
+      ${resolved
+        ? `<div class="bbp-card-stats">✓ ${_bbpFmt(resolved)} resolvidos${submitted ? ' · ' + _bbpFmt(submitted) + ' enviados' : ''}</div>`
+        : ''}
     </a>`;
 }
 
+// ── Pagination ─────────────────────────────────────────────────────────────
 function _bbpUpdatePagination(count, current, total) {
-  const pg = document.getElementById('bbp-pagination');
+  const pg   = document.getElementById('bbp-pagination');
   const prev = document.getElementById('bbp-prev-btn');
   const next = document.getElementById('bbp-next-btn');
   const info = document.getElementById('bbp-page-info');
-  if(!pg) return;
+  if (!pg) return;
   pg.style.display = total > 1 ? 'flex' : 'none';
-  if(prev) prev.disabled = current <= 1;
-  if(next) next.disabled = current >= total;
-  if(info) info.textContent = `Página ${current} de ${total}`;
+  if (prev) prev.disabled = current <= 1;
+  if (next) next.disabled = current >= total;
+  if (info) info.textContent = `Página ${current} de ${total}`;
 }
 
 function bbpChangePage(delta) {
@@ -249,13 +343,9 @@ function bbpChangePage(delta) {
   bbpLoad(true);
 }
 
-function _bbpShowCredsNotice(show) {
-  const el = document.getElementById('bbp-creds-notice');
-  if(el) el.style.display = show ? '' : 'none';
-}
-
+// ── Utils ──────────────────────────────────────────────────────────────────
 function _bbpEsc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 function _bbpFmt(n) {
   return Number(n).toLocaleString('pt-BR');
