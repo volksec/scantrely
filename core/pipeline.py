@@ -2910,13 +2910,18 @@ class ReconRunner:
         except ImportError:
             return []
 
-        print(f"[DEBUG] _probe_hosts_python_fallback: probing {len(subdomains)} hosts")
+        n = len(subdomains)
+        # Scale workers and deadline the same way the binary version does:
+        # more hosts → more workers (capped at 100) and longer deadline.
+        workers = min(100, max(25, n // 100))
+        probe_timeout = max(300, min(3600, n * 2))
+        print(f"[DEBUG] _probe_hosts_python_fallback: {n} hosts, {workers} workers, {probe_timeout}s deadline")
 
         def probe(host: str) -> dict | None:
             for scheme, port in [("https", 443), ("http", 80)]:
                 try:
                     r = _req.get(
-                        f"{scheme}://{host}", timeout=8, verify=False,
+                        f"{scheme}://{host}", timeout=(5, 5), verify=False,
                         allow_redirects=True,
                         headers={"User-Agent": "Mozilla/5.0 (compatible; ASMScanner/1.0)"},
                     )
@@ -2943,15 +2948,18 @@ class ReconRunner:
             return None
 
         results: list[dict] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(25, len(subdomains))) as ex:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             futs = {ex.submit(probe, h): h for h in subdomains}
-            for fut in concurrent.futures.as_completed(futs, timeout=300):
-                try:
-                    r = fut.result()
-                    if r:
-                        results.append(r)
-                except Exception:
-                    pass
+            try:
+                for fut in concurrent.futures.as_completed(futs, timeout=probe_timeout):
+                    try:
+                        r = fut.result()
+                        if r:
+                            results.append(r)
+                    except Exception:
+                        pass
+            except concurrent.futures.TimeoutError:
+                print(f"[DEBUG] _probe_hosts_python_fallback: deadline reached, returning {len(results)} partial results")
 
         print(f"[DEBUG] _probe_hosts_python_fallback returning {len(results)} live hosts")
         return results
