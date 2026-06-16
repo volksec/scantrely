@@ -193,6 +193,11 @@ def create_recon_blueprint(
             "hunter_key":    _opt("hunter_key", "HUNTER_KEY"),
             "intelx_key":    _opt("intelx_key", "INTELX_KEY"),
             "whoisxml_key":  _opt("whoisxml_key", "WHOISXML_KEY"),
+            # Censys API — stored as censys_api_id/censys_api_secret, read by pipeline as censys_id/censys_secret
+            "censys_id":     _opt("censys_api_id", "CENSYS_API_ID"),
+            "censys_secret": _opt("censys_api_secret", "CENSYS_API_SECRET"),
+            # Scan mode from settings (stealth/balanced/fast) — used by dns_brute and other modules
+            "scan_mode":     _opt("asm_scan_mode", "ASM_SCAN_MODE") or body.get("mode", "balanced"),
             "mode": body.get("mode", "balanced"),
             "queue_domains": queue_domains,
             "profile": "bug_bounty",

@@ -2745,9 +2745,9 @@ function applyHostFilter() {
   const wf = document.getElementById("h-waf")?.value||"";
   const st = document.getElementById("h-status")?.value||"";
   const filtered = _co_hosts.filter(h=>{
-    const ms = !q || h.host.includes(q)||h.ip.includes(q)||h.technologies.join(",").toLowerCase().includes(q);
-    return ms && (!wf||h.waf.includes(wf)) &&
-      (!st||(st==="active"&&h.ports.length>0)||(st==="inactive"&&h.ports.length===0));
+    const ms = !q || (h.host||"").includes(q)||(h.ip||"").includes(q)||(h.technologies||[]).join(",").toLowerCase().includes(q);
+    return ms && (!wf||(h.waf||"").includes(wf)) &&
+      (!st||(st==="active"&&(h.ports||[]).length>0)||(st==="inactive"&&(h.ports||[]).length===0));
   });
   _hosts_page = 1;
   renderHostsTable(filtered);
@@ -2764,8 +2764,8 @@ function hostsPageNav(d) {
   const wf=document.getElementById("h-waf")?.value||"";
   const st=document.getElementById("h-status")?.value||"";
   const filtered=_co_hosts.filter(h=>{
-    const ms=!q||h.host.includes(q)||h.ip.includes(q);
-    return ms&&(!wf||h.waf.includes(wf))&&(!st||(st==="active"&&h.ports.length>0)||(st==="inactive"&&h.ports.length===0));
+    const ms=!q||(h.host||"").includes(q)||(h.ip||"").includes(q);
+    return ms&&(!wf||(h.waf||"").includes(wf))&&(!st||(st==="active"&&(h.ports||[]).length>0)||(st==="inactive"&&(h.ports||[]).length===0));
   });
   const totPg=Math.ceil(filtered.length/HPP);
   _hosts_page=Math.max(1,Math.min(totPg,_hosts_page+d));
@@ -2866,7 +2866,7 @@ function renderPortsTab(co) {
       </div>
       </div>
     </div>`;
-  _co_ports = (co.hosts||[]).filter(h=>h.ports.length>0);
+  _co_ports = (co.hosts||[]).filter(h=>(h.ports||[]).length>0);
   _ports_page = 1;
   applyPortFilter();
 }
@@ -2875,7 +2875,7 @@ function applyPortFilter() {
   const q  = document.getElementById("p-search")?.value.toLowerCase()||"";
   const pt = document.getElementById("p-port")?.value||"";
   const filtered = _co_ports.filter(h=>{
-    return (!q||h.host.includes(q)||h.ip.includes(q)) && (!pt||h.ports.includes(pt));
+    return (!q||(h.host||"").includes(q)||(h.ip||"").includes(q)) && (!pt||(h.ports||[]).includes(pt));
   });
   _ports_page = 1;
   renderPortsTable(filtered);
@@ -2884,7 +2884,7 @@ function applyPortFilter() {
 function portsPageNav(d) {
   const q=document.getElementById("p-search")?.value.toLowerCase()||"";
   const pt=document.getElementById("p-port")?.value||"";
-  const filtered=_co_ports.filter(h=>(!q||h.host.includes(q)||h.ip.includes(q))&&(!pt||h.ports.includes(pt)));
+  const filtered=_co_ports.filter(h=>(!q||(h.host||"").includes(q)||(h.ip||"").includes(q))&&(!pt||(h.ports||[]).includes(pt)));
   const totPg=Math.ceil(filtered.length/PPP);
   _ports_page=Math.max(1,Math.min(totPg,_ports_page+d));
   renderPortsTable(filtered);
@@ -2916,11 +2916,11 @@ function renderPortsTable(filtered) {
       </td>
       <td><span class="ip-t">${esc(h.ip)}</span></td>
       <td><span class="waf-t ${wafClass(h.waf)}">${esc(h.waf)}</span>${cloudLabel}</td>
-      <td><div class="badge-row">${h.ports.map(p=>{
+      <td><div class="badge-row">${(h.ports||[]).map(p=>{
         if (portMap[p]) return `<span class="port-c" title="${esc(portMap[p].category||'')}">${esc(p)}:${esc(portMap[p].service||'')}</span>`;
         return `<span class="port-c">${esc(p)}</span>`;
       }).join("")}</div></td>
-      <td><span class="muted-kpi">${h.ports.length}</span></td>
+      <td><span class="muted-kpi">${(h.ports||[]).length}</span></td>
       <td><button class="url-copy-btn" onclick="copyToClipboard('${escAttr(h.host)}');event.stopPropagation()" title="Copy hostname" style="font-size:.6rem;padding:2px 5px">📋</button></td>
     </tr>`;
   }).join("");
@@ -7912,6 +7912,7 @@ const SETTINGS_SCHEMA = [
     fields:[
       {key:"shodan_key",          label:"Shodan API Key",          tag:"free",     hint:"shodan.io — free plan available",        signup:"https://account.shodan.io/"},
       {key:"censys_api_id",       label:"Censys API ID",           tag:"free",     hint:"censys.io — free researcher plan",       signup:"https://search.censys.io/account/api"},
+      {key:"censys_api_secret",   label:"Censys API Secret",       tag:"free",     hint:"Paired with Censys API ID",              signup:"https://search.censys.io/account/api"},
       {key:"netlas_key",          label:"Netlas API Key",          tag:"free",     hint:"netlas.io — free tier available",        signup:"https://app.netlas.io/profile/"},
     ]
   },
@@ -7938,6 +7939,7 @@ const SETTINGS_SCHEMA = [
   { group:"Code & Secrets", icon:"🔑", desc:"GitHub secrets, code leaks, API keys in repos",
     fields:[
       {key:"github_token",        label:"GitHub Token",            tag:"free",     hint:"Personal access token — avoids rate limits", signup:"https://github.com/settings/tokens/new"},
+      {key:"wpscan_token",        label:"WPScan API Token",        tag:"free",     hint:"wpscan.com — WordPress vulnerability scanner, free API token", signup:"https://wpscan.com/profile"},
     ]
   },
   { group:"Email & Identity", icon:"✉", desc:"Email infrastructure and identity OSINT",
