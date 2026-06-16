@@ -446,65 +446,7 @@ def bbprograms_hackerone():
     })
 
 
-@app.route("/api/bbprograms/bugcrowd")
-@require_auth
-def bbprograms_bugcrowd():
-    """Proxy para API do Bugcrowd. Requer bugcrowd_email + bugcrowd_token nas settings."""
-    from urllib.request import urlopen, Request as UrlRequest
-    from urllib.error import URLError, HTTPError
-    import base64
 
-    settings  = _get_settings()
-    email     = settings.get("bugcrowd_email", "").strip()
-    bc_token  = settings.get("bugcrowd_token", "").strip()
-
-    if not email or not bc_token:
-        return jsonify({"no_creds": True, "programs": [], "total_pages": 0})
-
-    page = int(request.args.get("page", "1"))
-    q    = request.args.get("q", "").strip()
-
-    creds = base64.b64encode(f"{email}:{bc_token}".encode()).decode()
-    headers = {
-        "Accept": "application/json",
-        "User-Agent": "SCANTRELY/1.0",
-        "Authorization": f"Basic {creds}",
-    }
-
-    offset = (page - 1) * 25
-    url = f"https://bugcrowd.com/programs.json?offset={offset}&limit=25"
-
-    try:
-        req = UrlRequest(url, headers=headers)
-        with urlopen(req, timeout=15) as resp:
-            raw = json.loads(resp.read().decode())
-    except HTTPError as e:
-        if e.code in (401, 403):
-            return jsonify({"error": "Credenciais inválidas. Verifique seu email e API token do Bugcrowd.", "auth_error": True}), 200
-        return jsonify({"error": f"Bugcrowd API error: {e.code} {e.reason}"}), 502
-    except Exception as e:
-        return jsonify({"error": str(e)}), 502
-
-    programs = []
-    for p in (raw if isinstance(raw, list) else raw.get("programs", raw.get("data", []))):
-        programs.append({
-            "id":            p.get("id", ""),
-            "handle":        p.get("code", p.get("handle", "")),
-            "name":          p.get("name", p.get("company_name", "")),
-            "state":         "public_mode" if p.get("access_level") == "open" else "soft_launch",
-            "offers_bounties": bool(p.get("max_reward") or p.get("rewards_count")),
-            "min_bounty_table_value": p.get("min_reward", 0),
-            "max_bounty_table_value": p.get("max_reward", 0),
-            "profile_picture_urls": {"small": p.get("logo", "")},
-            "statistics":    {"resolved_report_count": p.get("rewards_count", 0)},
-            "in_scope":      [{"asset_type": t} for t in (p.get("target_types") or [])],
-            "platform":      "bugcrowd",
-        })
-
-    return jsonify({
-        "programs":    programs,
-        "total_pages": max(1, page + (1 if len(programs) >= 25 else 0)),
-    })
 
 
 @app.route("/favicon.ico")
@@ -843,7 +785,7 @@ def _load_hosts_for_company(cid: str) -> list:
     return []
 
 _SETTINGS_KEYS = {
-    "hackerone_username", "hackerone_token", "bugcrowd_email", "bugcrowd_token",
+    "hackerone_username", "hackerone_token",
     "shodan_key", "github_token", "hibp_key", "dehashed_key",
     "censys_api_id", "censys_api_secret", "securitytrails_key",
     "virustotal_key", "binaryedge_key", "fullhunt_key",

@@ -7953,6 +7953,12 @@ const SETTINGS_SCHEMA = [
       {key:"hermes_model",        label:"Modelo",                  tag:"optional", hint:"Padrão: hermes-agent (nome cosmético — o gateway usa o modelo do profile configurado)"},
     ]
   },
+  { group:"Bug Bounty Platforms", icon:"🏆", desc:"Credenciais para visualizar programas de Bug Bounty diretamente na plataforma",
+    fields:[
+      {key:"hackerone_username",  label:"HackerOne Username",      tag:"optional", hint:"Seu username do HackerOne (não o e-mail)", signup:"https://hackerone.com/settings/api_token_v2"},
+      {key:"hackerone_token",     label:"HackerOne API Token",     tag:"optional", hint:"Token de API gerado em hackerone.com/settings/api_token_v2", signup:"https://hackerone.com/settings/api_token_v2"},
+    ]
+  },
 ];
 
 // ── Runtime Config Schema (separate ⚡ Performance page) ──

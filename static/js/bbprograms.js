@@ -4,8 +4,8 @@
 'use strict';
 
 let _bbpPlatform = 'hackerone';
-let _bbpData     = { hackerone: null, bugcrowd: null };
-let _bbpPage     = { hackerone: 1, bugcrowd: 1 };
+let _bbpData     = { hackerone: null };
+let _bbpPage     = { hackerone: 1 };
 let _bbpSearch   = '';
 let _bbpLoading  = false;
 
@@ -19,21 +19,9 @@ const _BBP_META = {
       'Acesse <a href="https://hackerone.com/settings/api_token_v2" target="_blank" rel="noopener" class="bbp-link">hackerone.com/settings/api_token_v2</a>',
       'Gere um novo token de API com permissão de leitura de programas',
       'Copie seu <strong>Username</strong> (não o e-mail) e o <strong>Token</strong>',
-      'Cole nos campos <code>hackerone_username</code> e <code>hackerone_token</code> em <a class="bbp-link" onclick="showPage(\'settings\')" href="#">⚙️ Configurações → API Keys</a>',
+      'Cole nos campos <code>HackerOne Username</code> e <code>HackerOne Token</code> em <a class="bbp-link" onclick="showPage(\'settings\')" href="#">⚙️ Configurações → Bug Bounty Platforms</a>',
     ],
     docsUrl: 'https://api.hackerone.com/',
-  },
-  bugcrowd: {
-    label: 'Bugcrowd',
-    icon: '🟠',
-    settingsKeys: ['bugcrowd_email', 'bugcrowd_token'],
-    setupSteps: [
-      'Acesse <a href="https://bugcrowd.com/user/settings/api" target="_blank" rel="noopener" class="bbp-link">bugcrowd.com/user/settings/api</a>',
-      'Gere um novo API token',
-      'Copie seu <strong>E-mail</strong> e o <strong>Token</strong>',
-      'Cole nos campos <code>bugcrowd_email</code> e <code>bugcrowd_token</code> em <a class="bbp-link" onclick="showPage(\'settings\')" href="#">⚙️ Configurações → API Keys</a>',
-    ],
-    docsUrl: 'https://docs.bugcrowd.com/api/getting-started/',
   },
 };
 
@@ -49,19 +37,8 @@ function showBBProgramsPage() {
     <div class="bbp-header">
       <div>
         <div class="page-title">🏆 Bug Bounty Programs</div>
-        <div class="page-desc">Explore programas reais de Bug Bounty do HackerOne e Bugcrowd sem sair da plataforma.</div>
+        <div class="page-desc">Explore programas reais de Bug Bounty do HackerOne sem sair da plataforma.</div>
       </div>
-    </div>
-
-    <div class="bbp-platform-tabs">
-      <button class="bbp-tab active" id="bbp-tab-hackerone" onclick="bbpSwitchPlatform('hackerone')">
-        <img src="https://www.hackerone.com/favicon.ico" onerror="this.style.display='none'" style="width:16px;height:16px;border-radius:2px">
-        HackerOne
-      </button>
-      <button class="bbp-tab" id="bbp-tab-bugcrowd" onclick="bbpSwitchPlatform('bugcrowd')">
-        <img src="https://www.bugcrowd.com/favicon.ico" onerror="this.style.display='none'" style="width:16px;height:16px;border-radius:2px">
-        Bugcrowd
-      </button>
     </div>
 
     <div class="bbp-toolbar" id="bbp-toolbar" style="display:none">
