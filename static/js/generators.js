@@ -23,7 +23,6 @@ const GEN_MODULES = [
   { id:'curriculo', icon:'📋', label:'Gerador de Currículo' },
   { id:'nome',      icon:'✍️', label:'Gerador de Nomes' },
   { id:'nick',      icon:'🎮', label:'Gerador de Nicks' },
-  { id:'letras',    icon:'🔤', label:'Gerador de Letras Diferentes' },
   { id:'numeros',   icon:'🔢', label:'Gerador de Números Aleatórios' },
   { id:'senha',     icon:'🔑', label:'Gerador de Senha' },
 ];
@@ -754,19 +753,6 @@ window.genExec_numeros = function(){
   _renderBulkList('numeros', pool.map(String));
 };
 
-// ─── Letras (sem bulk) ───────────────────────────────────────────────
-const _FONT_STYLES=[{id:'bold',label:'𝐍𝐞𝐠𝐫𝐢𝐭𝐨'},{id:'italic',label:'𝐼𝑡á𝑙𝑖𝑐𝑜'},{id:'script',label:'𝒞𝒶𝓁𝒾𝑔𝓇á𝒻𝒾𝒸𝑜'},{id:'double',label:'𝔻𝕦𝕡𝕝𝕠'},{id:'mono',label:'𝙼𝚘𝚗𝚘'},{id:'circled',label:'Ⓒⓘⓡⓒⓛⓔⓓ'},{id:'strike',label:'S̶t̶r̶i̶k̶e̶'},{id:'underline',label:'U͟n͟d͟e͟r͟'}];
-function _toFontStyle(text,style){return[...text].map(c=>{const code=c.codePointAt(0),isU=code>=65&&code<=90,isL=code>=97&&code<=122,isD=code>=48&&code<=57;switch(style){case'bold':if(isU)return String.fromCodePoint(0x1D400+code-65);if(isL)return String.fromCodePoint(0x1D41A+code-97);return c;case'italic':if(isU)return String.fromCodePoint(0x1D434+code-65);if(isL)return String.fromCodePoint(0x1D44E+code-97);return c;case'script':if(isU)return String.fromCodePoint(0x1D49C+code-65);if(isL)return String.fromCodePoint(0x1D4B6+code-97);return c;case'double':if(isU)return String.fromCodePoint(0x1D538+code-65);if(isL)return String.fromCodePoint(0x1D552+code-97);if(isD)return String.fromCodePoint(0x1D7D8+code-48);return c;case'mono':if(isU)return String.fromCodePoint(0x1D670+code-65);if(isL)return String.fromCodePoint(0x1D68A+code-97);if(isD)return String.fromCodePoint(0x1D7F6+code-48);return c;case'circled':if(isU)return String.fromCodePoint(0x24B6+code-65);if(isL)return String.fromCodePoint(0x24D0+code-97);if(isD)return['⓪','①','②','③','④','⑤','⑥','⑦','⑧','⑨'][code-48]||c;return c;case'strike':return c+'̶';case'underline':return c+'̲';default:return c;}}).join('');}
-function _genRender_letras(){return`
-  <div class="gen-top-bar"><h2>🔤 Gerador de Letras Diferentes</h2></div>
-  <div class="gen-card">
-    <textarea id="letras-input" class="gen-textarea" placeholder="Digite seu texto..." oninput="genUpdateLetras()" rows="3">SCANTRELY</textarea>
-    <div class="gen-letras-results" id="letras-output" style="margin-top:14px">
-      ${_FONT_STYLES.map(s=>`<div class="gen-letras-row"><span class="gen-letras-style-name">${s.label}</span><span class="gen-letras-preview" id="letras-${s.id}">${_esc(_toFontStyle('SCANTRELY',s.id))}</span><button class="gen-copy-btn" onclick="genCopyLetras('${s.id}')">📋</button></div>`).join('')}
-    </div>
-  </div>`;}
-function genUpdateLetras(){const t=document.getElementById('letras-input')?.value||'';_FONT_STYLES.forEach(s=>{const el=document.getElementById(`letras-${s.id}`);if(el)el.textContent=_toFontStyle(t,s.id);});}
-function genCopyLetras(id){_copyToClipboard(document.getElementById(`letras-${id}`)?.textContent||'');}
 
 // ════════════════════════════════════════════════════════════════════════
 //  PESSOA — RENDER COMPLETO
@@ -912,7 +898,7 @@ function genActivate(id){
   document.querySelectorAll('.gen-nav-item').forEach(el=>el.classList.remove('active'));
   document.getElementById(`gen-nav-${id}`)?.classList.add('active');
   const main=document.getElementById('gen-main'); if(!main)return;
-  const renders={cpf:_genRender_cpf,cnpj:_genRender_cnpj,rg:_genRender_rg,cep:_genRender_cep,pis:_genRender_pis,renavam:_genRender_renavam,cnh:_genRender_cnh,titulo:_genRender_titulo,ie:_genRender_ie,cartao:_genRender_cartao,placa:_genRender_placa,veiculo:_genRender_veiculo,conta:_genRender_conta,certidao:_genRender_certidao,pessoa:_genRender_pessoa,empresa:_genRender_empresa,curriculo:_genRender_curriculo,nome:_genRender_nome,nick:_genRender_nick,letras:_genRender_letras,numeros:_genRender_numeros,senha:_genRender_senha};
+  const renders={cpf:_genRender_cpf,cnpj:_genRender_cnpj,rg:_genRender_rg,cep:_genRender_cep,pis:_genRender_pis,renavam:_genRender_renavam,cnh:_genRender_cnh,titulo:_genRender_titulo,ie:_genRender_ie,cartao:_genRender_cartao,placa:_genRender_placa,veiculo:_genRender_veiculo,conta:_genRender_conta,certidao:_genRender_certidao,pessoa:_genRender_pessoa,empresa:_genRender_empresa,curriculo:_genRender_curriculo,nome:_genRender_nome,nick:_genRender_nick,numeros:_genRender_numeros,senha:_genRender_senha};
   const fn=renders[id]; if(fn)main.innerHTML=fn();
   if(id==='letras')genUpdateLetras();
 }
