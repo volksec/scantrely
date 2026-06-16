@@ -4256,8 +4256,8 @@ def _check_hibp_domain(domain: str, api_key: str = None) -> dict:
 
 def _check_trufflehog_github(domain: str) -> list:
     """Use trufflehog to scan GitHub for secrets related to domain."""
-    th = shutil.which("trufflehog") is not None
-    if th.returncode != 0:
+    import shutil as _shutil
+    if not _shutil.which("trufflehog"):
         return []
     findings = []
     try:

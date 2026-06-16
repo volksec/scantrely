@@ -2899,12 +2899,71 @@ class ReconRunner:
 
         return normalized
 
+    def _probe_hosts_python_fallback(self, subdomains: list[str]) -> list[dict]:
+        """Pure-Python HTTP probing when ProjectDiscovery httpx binary is unavailable."""
+        import concurrent.futures
+        import re as _re
+        try:
+            import requests as _req
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except ImportError:
+            return []
+
+        print(f"[DEBUG] _probe_hosts_python_fallback: probing {len(subdomains)} hosts")
+
+        def probe(host: str) -> dict | None:
+            for scheme, port in [("https", 443), ("http", 80)]:
+                try:
+                    r = _req.get(
+                        f"{scheme}://{host}", timeout=8, verify=False,
+                        allow_redirects=True,
+                        headers={"User-Agent": "Mozilla/5.0 (compatible; ASMScanner/1.0)"},
+                    )
+                    title = ""
+                    m = _re.search(r"<title[^>]*>([^<]{1,120})", r.text, _re.I)
+                    if m:
+                        title = m.group(1).strip()
+                    return {
+                        "host":           host,
+                        "ip":             "",
+                        "waf":            "Unknown",
+                        "technologies":   [],
+                        "ports":          [str(port)],
+                        "status_code":    r.status_code,
+                        "content_length": len(r.content),
+                        "title":          title[:120],
+                        "server":         r.headers.get("Server", ""),
+                        "scope_distance": 0,
+                        "cdn":            False,
+                        "redirect_url":   str(r.url)[:200],
+                    }
+                except Exception:
+                    continue
+            return None
+
+        results: list[dict] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(25, len(subdomains))) as ex:
+            futs = {ex.submit(probe, h): h for h in subdomains}
+            for fut in concurrent.futures.as_completed(futs, timeout=300):
+                try:
+                    r = fut.result()
+                    if r:
+                        results.append(r)
+                except Exception:
+                    pass
+
+        print(f"[DEBUG] _probe_hosts_python_fallback returning {len(results)} live hosts")
+        return results
+
     def _probe_hosts_with_httpx(self, subdomains: list[str], cid: str, extra_headers: list[str] | None = None, _expand_redirects: bool = True) -> list[dict]:
         print(f"[DEBUG] _probe_hosts_with_httpx called with {len(subdomains)} subdomains for {cid}")
-        httpx_bin = str(BIN_DIR / "httpx") if (BIN_DIR / "httpx").is_file() else shutil.which("httpx")
-        if not httpx_bin or not subdomains:
-            print(f"[DEBUG] httpx_bin={httpx_bin}, subdomains={len(subdomains) if subdomains else 0}")
+        httpx_bin = str(BIN_DIR / "httpx") if (BIN_DIR / "httpx").is_file() else None
+        if not subdomains:
             return []
+        if not httpx_bin:
+            print(f"[DEBUG] ProjectDiscovery httpx binary not found in bin/ — using Python fallback")
+            return self._probe_hosts_python_fallback(subdomains)
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tf:
             tf.write("\n".join(subdomains))
