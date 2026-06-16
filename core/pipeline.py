@@ -249,7 +249,7 @@ PIPELINE_PHASES = [
         "modules":    [
             "subfinder", "assetfinder", "certs", "alienvault_otx",
             "urlscan_io", "rapiddns", "hackertarget", "github_subdomains",
-            "wayback", "urlfinder",
+            "wayback", "urlfinder", "theharvester", "hunterio",
         ],
         "rate_phase": "passive",
         "parallel":   True,
@@ -258,7 +258,7 @@ PIPELINE_PHASES = [
     {
         "id":         "validation",
         "label":      "Fase 2 — Validação, DNS e Escopo",
-        "modules":    ["dns", "dns_brute", "leaks"],
+        "modules":    ["dns", "dns_brute", "leaks", "email"],
         "rate_phase": "dns",
         "parallel":   True,
         "merge_hosts": True,
@@ -269,7 +269,7 @@ PIPELINE_PHASES = [
         "label":      "Fase 3 — Intel Útil para Bug Bounty",
         "modules":    [
             "shodan", "postman_collections", "cloud", "container_registry",
-            "bulk_dataset", "breach", "dep_confusion",
+            "bulk_dataset", "breach", "dep_confusion", "asn", "asnmap",
         ],
         "rate_phase": "passive",
         "parallel":   True,
@@ -4843,7 +4843,7 @@ class ReconRunner:
         # Rebuild stats with all frontend-required fields
         def _count_sev(sev): return sum(1 for f in all_findings if f.get("severity") == sev)
         co_data.setdefault("stats", {}).update({
-            "live_hosts":        len(co_data.get("hosts", [])),
+            "live_hosts":        len([h for h in co_data.get("hosts", []) if _is_responsive(h)]),
             "subdomains":        len(co_data.get("hosts", [])),
             "findings_critical": _count_sev("critical"),
             "findings_high":     _count_sev("high"),

@@ -8732,9 +8732,9 @@ const _phudModTimes = {};   // Track module start/end for Gantt
 const _phudParticles = {};  // Track animation frames
 
 const PIPELINE_PHASES_DEF = [
-  {id:"discovery",    label:"DISCOVERY",       icon:"🛰",  color:"#00e5ff", mods:["subfinder","assetfinder","certs","alienvault_otx","urlscan_io","rapiddns","hackertarget","github_subdomains","wayback","urlfinder"]},
-  {id:"validation",   label:"VALIDAÇÃO",       icon:"🔍",  color:"#818cf8", mods:["dns","dns_brute","leaks"]},
-  {id:"intel",        label:"INTEL",           icon:"⚡",  color:"#fbbf24", mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","dep_confusion"]},
+  {id:"discovery",    label:"DISCOVERY",       icon:"🛰",  color:"#00e5ff", mods:["subfinder","assetfinder","certs","alienvault_otx","urlscan_io","rapiddns","hackertarget","github_subdomains","wayback","urlfinder","theharvester","hunterio"]},
+  {id:"validation",   label:"VALIDAÇÃO",       icon:"🔍",  color:"#818cf8", mods:["dns","dns_brute","leaks","email"]},
+  {id:"intel",        label:"INTEL",           icon:"⚡",  color:"#fbbf24", mods:["shodan","postman_collections","cloud","container_registry","bulk_dataset","breach","dep_confusion","asn","asnmap"]},
   {id:"fingerprint",  label:"FINGERPRINT",     icon:"🔬",  color:"#00e5ff", mods:["headers","waf","wappalyzer","whatweb","vendor_fp","service_version","favicon_hunt","screenshot","gowitness"]},
   {id:"api_mapping",  label:"JS/API",          icon:"⬡",  color:"#4ade80", mods:["js","js_endpoints","js_secrets","api_discovery_extra","graphql"]},
   {id:"browser",      label:"PLAYWRIGHT",      icon:"▣",  color:"#c084fc", mods:["browser_crawl","browser_recon"]},
