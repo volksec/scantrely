@@ -24,12 +24,8 @@ const GEN_MODULES = [
   { id:'nome',      icon:'✍️', label:'Gerador de Nomes' },
   { id:'nick',      icon:'🎮', label:'Gerador de Nicks' },
   { id:'letras',    icon:'🔤', label:'Gerador de Letras Diferentes' },
-  { id:'simbolos',  icon:'✦',  label:'Símbolos para Copiar' },
   { id:'numeros',   icon:'🔢', label:'Gerador de Números Aleatórios' },
   { id:'senha',     icon:'🔑', label:'Gerador de Senha' },
-  { id:'lorem',     icon:'📝', label:'Gerador de Lorem Ipsum' },
-  { id:'imagem',    icon:'🖼️', label:'Gerador de Imagem' },
-  { id:'sorteador', icon:'🎲', label:'Sorteador de Números' },
 ];
 
 let _genActive = 'cpf';
@@ -149,8 +145,6 @@ const _BANCOS=[{c:'001',n:'Banco do Brasil'},{c:'033',n:'Santander'},{c:'104',n:
 function _genConta(){const b=_pick(_BANCOS);return{banco:`${b.c} - ${b.n}`,agencia:`${_pad(_rnd(1000,9999),4)}-${_rnd(0,9)}`,conta:`${_pad(_rnd(10000,999999),6)}-${_rnd(0,9)}`,tipo:_pick(['Corrente','Poupança','Salário'])};}
 function _genCertidao(){return{tipo:_pick(['Nascimento','Casamento','Óbito']),matricula:`${_pad(_rnd(1,99999),5)} ${_pad(_rnd(1,99),2)} ${_rnd(1970,2024)} 2 ${_pad(_rnd(1,99),2)} ${_pad(_rnd(1,9999),4)} ${_rnd(100,999)} ${_pad(_rnd(10000,99999),5)}`,cartorio:_pick(['1º Ofício de Registro Civil','2º Ofício de Registro Civil','Cartório Paz e Bem']),uf:_pick(_UF_LIST),data:`${_pad(_rnd(1,28),2)}/${_pad(_rnd(1,12),2)}/${_rnd(1970,2024)}`};}
 function _genSenha(l=16,lo=true,up=true,nu=true,sy=true){let c='';const p=[];if(lo){c+='abcdefghijklmnopqrstuvwxyz';p.push('abcdefghijklmnopqrstuvwxyz');}if(up){c+='ABCDEFGHIJKLMNOPQRSTUVWXYZ';p.push('ABCDEFGHIJKLMNOPQRSTUVWXYZ');}if(nu){c+='0123456789';p.push('0123456789');}if(sy){c+='!@#$%^&*()_+-=[]{}|;:,.<>?';p.push('!@#$%^&*()_+-=[]{}|;:,.<>?');}if(!c)c='abcdefghijklmnopqrstuvwxyz0123456789';let pw=p.map(x=>x[_rnd(0,x.length-1)]).join('');while(pw.length<l)pw+=c[_rnd(0,c.length-1)];return pw.split('').sort(()=>Math.random()-.5).join('').slice(0,l);}
-const _LOREM=['lorem','ipsum','dolor','sit','amet','consectetur','adipiscing','elit','sed','do','eiusmod','tempor','incididunt','ut','labore','et','dolore','magna','aliqua','enim','ad','minim','veniam','quis','nostrud','exercitation','ullamco','laboris','nisi','aliquip','ex','ea','commodo','consequat','duis','aute','irure','in','reprehenderit','voluptate','velit','esse','cillum','fugiat','nulla','pariatur','excepteur','sint','occaecat','cupidatat','non','proident','sunt','culpa','qui','officia','deserunt','mollit','anim','est','laborum'];
-function _genLorem(p=1){return Array.from({length:p},(_,pi)=>{const ns=_rnd(3,6);return Array.from({length:ns},(_,si)=>{let w=Array.from({length:_rnd(8,16)},()=>_pick(_LOREM));if(pi===0&&si===0){w[0]='Lorem';if(w[1])w[1]='ipsum';}w[0]=w[0].charAt(0).toUpperCase()+w[0].slice(1);return w.join(' ')+'.';}).join(' ');});}
 
 // ════════════════════════════════════════════════════════════════════════
 //  DADOS GLOBAIS — PESSOA COMPLETA (20 países)
@@ -511,7 +505,6 @@ function _renderBulkList(id, items){
     <div class="gen-bulk-item">
       <span class="gen-bulk-num">${String(i+1).padStart(3,'0')}</span>
       <span class="gen-bulk-val">${_esc(v)}</span>
-      <button class="gen-copy-btn" onclick="_copyToClipboard(${JSON.stringify(v)});this.textContent='✓';setTimeout(()=>this.textContent='📋',1000)">📋</button>
     </div>`).join('');
 }
 
@@ -731,57 +724,6 @@ window.genExec_senha = function(){
   _renderBulkList('senha', Array.from({length:q},()=>_genSenha(l,lo,up,nu,sy)));
 };
 
-function _genRender_lorem(){return`
-  <div class="gen-top-bar"><h2>📝 Gerador de Lorem Ipsum</h2></div>
-  <div class="gen-card">
-    <div class="gen-bulk-row">
-      <div class="gen-field-group"><label>Parágrafos</label><input type="number" id="lorem-qty" value="2" min="1" max="20" class="gen-input" style="width:90px"></div>
-    </div>
-    <div class="gen-bulk-actions" style="margin-top:12px">
-      <button class="btn btn-primary" onclick="genExec_lorem()">↻ Gerar</button>
-      <button class="btn btn-secondary" onclick="_bulkCopyAll()">📋 Copiar Tudo</button>
-    </div>
-  </div>
-  <div class="gen-card gen-bulk-output-card"><div id="lorem-output" class="gen-lorem-output"></div></div>`;
-}
-window.genExec_lorem = function(){
-  const p=Math.min(parseInt(document.getElementById('lorem-qty')?.value||2),20);
-  const paras=_genLorem(p);
-  window._genBulkResults=paras;
-  const el=document.getElementById('lorem-output');
-  if(el)el.innerHTML=paras.map(t=>`<p>${_esc(t)}</p>`).join('');
-};
-
-function _genRender_imagem(){return`
-  <div class="gen-top-bar"><h2>🖼️ Gerador de Imagem</h2></div>
-  <div class="gen-card">
-    <div class="gen-bulk-row">
-      <div class="gen-field-group"><label>Largura</label><input type="number" id="img-w" value="640" class="gen-input" style="width:90px"></div>
-      <div class="gen-field-group"><label>Altura</label><input type="number" id="img-h" value="480" class="gen-input" style="width:90px"></div>
-      <div class="gen-field-group"><label>Texto</label><input type="text" id="img-text" value="Placeholder" class="gen-input"></div>
-      <div class="gen-field-group"><label>Fundo</label><input type="color" id="img-bg" value="#1a2333" class="gen-input" style="height:36px;padding:2px"></div>
-      <div class="gen-field-group"><label>Cor Texto</label><input type="color" id="img-fg" value="#00e5ff" class="gen-input" style="height:36px;padding:2px"></div>
-    </div>
-    <div class="gen-bulk-actions" style="margin-top:12px">
-      <button class="btn btn-primary" onclick="genExec_imagem()">↻ Gerar</button>
-      <button class="btn btn-secondary" onclick="_copyToClipboard(document.getElementById('img-url').textContent)">📋 Copiar URL</button>
-    </div>
-  </div>
-  <div class="gen-card">
-    <img id="img-preview" src="https://placehold.co/640x480/1a2333/00e5ff?text=Placeholder" style="max-width:100%;border-radius:8px;border:1px solid var(--border)">
-    <div id="img-url" style="font-size:.75rem;color:var(--text3);margin-top:8px;word-break:break-all"></div>
-  </div>`;
-}
-window.genExec_imagem = function(){
-  const w=parseInt(document.getElementById('img-w')?.value||640);
-  const h=parseInt(document.getElementById('img-h')?.value||480);
-  const t=document.getElementById('img-text')?.value||'Placeholder';
-  const bg=(document.getElementById('img-bg')?.value||'#1a2333').replace('#','');
-  const fg=(document.getElementById('img-fg')?.value||'#00e5ff').replace('#','');
-  const url=`https://placehold.co/${w}x${h}/${bg}/${fg}?text=${encodeURIComponent(t)}`;
-  const img=document.getElementById('img-preview'); if(img)img.src=url;
-  const uel=document.getElementById('img-url'); if(uel)uel.textContent=url;
-};
 
 function _genRender_numeros(){return`
   <div class="gen-top-bar"><h2>🔢 Gerador de Números Aleatórios</h2></div>
@@ -812,33 +754,7 @@ window.genExec_numeros = function(){
   _renderBulkList('numeros', pool.map(String));
 };
 
-function _genRender_sorteador(){return`
-  <div class="gen-top-bar"><h2>🎲 Sorteador de Números</h2></div>
-  <div class="gen-card">
-    <div class="gen-bulk-row">
-      <div class="gen-field-group"><label>De</label><input type="number" id="sort-min" value="1" class="gen-input" style="width:90px"></div>
-      <div class="gen-field-group"><label>Até</label><input type="number" id="sort-max" value="60" class="gen-input" style="width:90px"></div>
-      <div class="gen-field-group"><label>Sorteados</label><input type="number" id="sort-qty" value="6" min="1" max="100" class="gen-input" style="width:90px"></div>
-    </div>
-    <div class="gen-bulk-actions" style="margin-top:12px">
-      <button class="btn btn-primary" onclick="genExec_sorteador()">🎲 Sortear!</button>
-      <button class="btn btn-secondary" id="bulk-copy-all" onclick="_bulkCopyAll()">📋 Copiar</button>
-    </div>
-  </div>
-  <div class="gen-card"><div id="sort-result" class="gen-sort-result"><span style="color:var(--text3)">Clique em Sortear para começar</span></div></div>`;
-}
-window.genExec_sorteador = function(){
-  const mn=parseInt(document.getElementById('sort-min')?.value||1),mx=parseInt(document.getElementById('sort-max')?.value||60);
-  const q=Math.min(parseInt(document.getElementById('sort-qty')?.value||6),Math.min(100,mx-mn+1));
-  const pool=Array.from({length:mx-mn+1},(_,i)=>i+mn);
-  for(let i=pool.length-1;i>0;i--){const j=_rnd(0,i);[pool[i],pool[j]]=[pool[j],pool[i]];}
-  const drawn=pool.slice(0,q).sort((a,b)=>a-b);
-  window._genBulkResults=[drawn.join(', ')];
-  const el=document.getElementById('sort-result');
-  if(el)el.innerHTML=drawn.map(n=>`<span class="gen-sort-ball">${n}</span>`).join('');
-};
-
-// ─── Letras + Símbolos (sem bulk) ────────────────────────────────────
+// ─── Letras (sem bulk) ───────────────────────────────────────────────
 const _FONT_STYLES=[{id:'bold',label:'𝐍𝐞𝐠𝐫𝐢𝐭𝐨'},{id:'italic',label:'𝐼𝑡á𝑙𝑖𝑐𝑜'},{id:'script',label:'𝒞𝒶𝓁𝒾𝑔𝓇á𝒻𝒾𝒸𝑜'},{id:'double',label:'𝔻𝕦𝕡𝕝𝕠'},{id:'mono',label:'𝙼𝚘𝚗𝚘'},{id:'circled',label:'Ⓒⓘⓡⓒⓛⓔⓓ'},{id:'strike',label:'S̶t̶r̶i̶k̶e̶'},{id:'underline',label:'U͟n͟d͟e͟r͟'}];
 function _toFontStyle(text,style){return[...text].map(c=>{const code=c.codePointAt(0),isU=code>=65&&code<=90,isL=code>=97&&code<=122,isD=code>=48&&code<=57;switch(style){case'bold':if(isU)return String.fromCodePoint(0x1D400+code-65);if(isL)return String.fromCodePoint(0x1D41A+code-97);return c;case'italic':if(isU)return String.fromCodePoint(0x1D434+code-65);if(isL)return String.fromCodePoint(0x1D44E+code-97);return c;case'script':if(isU)return String.fromCodePoint(0x1D49C+code-65);if(isL)return String.fromCodePoint(0x1D4B6+code-97);return c;case'double':if(isU)return String.fromCodePoint(0x1D538+code-65);if(isL)return String.fromCodePoint(0x1D552+code-97);if(isD)return String.fromCodePoint(0x1D7D8+code-48);return c;case'mono':if(isU)return String.fromCodePoint(0x1D670+code-65);if(isL)return String.fromCodePoint(0x1D68A+code-97);if(isD)return String.fromCodePoint(0x1D7F6+code-48);return c;case'circled':if(isU)return String.fromCodePoint(0x24B6+code-65);if(isL)return String.fromCodePoint(0x24D0+code-97);if(isD)return['⓪','①','②','③','④','⑤','⑥','⑦','⑧','⑨'][code-48]||c;return c;case'strike':return c+'̶';case'underline':return c+'̲';default:return c;}}).join('');}
 function _genRender_letras(){return`
@@ -851,11 +767,6 @@ function _genRender_letras(){return`
   </div>`;}
 function genUpdateLetras(){const t=document.getElementById('letras-input')?.value||'';_FONT_STYLES.forEach(s=>{const el=document.getElementById(`letras-${s.id}`);if(el)el.textContent=_toFontStyle(t,s.id);});}
 function genCopyLetras(id){_copyToClipboard(document.getElementById(`letras-${id}`)?.textContent||'');}
-const _SIMBOLOS_CATS=[{cat:'Setas',syms:['←','→','↑','↓','↔','↕','⇐','⇒','⇑','⇓','⇔','⇕','↩','↪','↺','↻','⟵','⟶','⟷','↗','↘','↙','↖']},{cat:'Matemática',syms:['∞','∑','∏','√','∛','∂','∇','∫','±','∓','×','÷','≠','≤','≥','≈','≡','∈','∉','⊂','⊃','∩','∪','∧','∨','¬','∀','∃']},{cat:'Monetário',syms:['$','€','£','¥','₩','₿','₽','₹','₺','₲','₦','₱','₴','₵','₸','¢','฿','৳','₭','₮']},{cat:'Estrelas/Formas',syms:['★','☆','✦','✧','✩','✪','✫','✬','✭','✮','✯','✰','⭐','✨','❤','♠','♥','♦','♣','▲','▼','◆','◇','●','○','■','□']},{cat:'Especiais',syms:['©','®','™','℗','°','µ','§','¶','†','‡','‰','№','℃','℉','Ω','Å','ℓ','℘']},{cat:'Check/X',syms:['✓','✗','✘','✔','✕','✖','✙','✚','✛','✜','❌','✅','☑','☒','⊕','⊗','⊙','⊘']}];
-function _genRender_simbolos(){return`
-  <div class="gen-top-bar"><h2>✦ Símbolos para Copiar</h2></div>
-  <p style="color:var(--text3);font-size:.78rem;margin-bottom:14px">Clique em qualquer símbolo para copiar</p>
-  ${_SIMBOLOS_CATS.map(cat=>`<div class="gen-card" style="margin-bottom:12px"><div class="gen-card-hdr">${cat.cat}</div><div class="gen-simbolos-grid">${cat.syms.map(s=>`<button class="gen-simbolo" title="${s}" onclick="_copyToClipboard('${s.replace(/'/g,"\\'")}')" >${s}</button>`).join('')}</div></div>`).join('')}`;}
 
 // ════════════════════════════════════════════════════════════════════════
 //  PESSOA — RENDER COMPLETO
@@ -1001,7 +912,7 @@ function genActivate(id){
   document.querySelectorAll('.gen-nav-item').forEach(el=>el.classList.remove('active'));
   document.getElementById(`gen-nav-${id}`)?.classList.add('active');
   const main=document.getElementById('gen-main'); if(!main)return;
-  const renders={cpf:_genRender_cpf,cnpj:_genRender_cnpj,rg:_genRender_rg,cep:_genRender_cep,pis:_genRender_pis,renavam:_genRender_renavam,cnh:_genRender_cnh,titulo:_genRender_titulo,ie:_genRender_ie,cartao:_genRender_cartao,placa:_genRender_placa,veiculo:_genRender_veiculo,conta:_genRender_conta,certidao:_genRender_certidao,pessoa:_genRender_pessoa,empresa:_genRender_empresa,curriculo:_genRender_curriculo,nome:_genRender_nome,nick:_genRender_nick,letras:_genRender_letras,simbolos:_genRender_simbolos,numeros:_genRender_numeros,senha:_genRender_senha,lorem:_genRender_lorem,imagem:_genRender_imagem,sorteador:_genRender_sorteador};
+  const renders={cpf:_genRender_cpf,cnpj:_genRender_cnpj,rg:_genRender_rg,cep:_genRender_cep,pis:_genRender_pis,renavam:_genRender_renavam,cnh:_genRender_cnh,titulo:_genRender_titulo,ie:_genRender_ie,cartao:_genRender_cartao,placa:_genRender_placa,veiculo:_genRender_veiculo,conta:_genRender_conta,certidao:_genRender_certidao,pessoa:_genRender_pessoa,empresa:_genRender_empresa,curriculo:_genRender_curriculo,nome:_genRender_nome,nick:_genRender_nick,letras:_genRender_letras,numeros:_genRender_numeros,senha:_genRender_senha};
   const fn=renders[id]; if(fn)main.innerHTML=fn();
   if(id==='letras')genUpdateLetras();
 }
