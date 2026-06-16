@@ -2186,7 +2186,10 @@ html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .http-panels { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 @media (max-width:680px) { .http-panels { grid-template-columns:1fr; } }
 .http-panel { background:#0a0e17; border:1px solid #1e2533; border-radius:6px; overflow:hidden; min-width:0; }
-.http-panel-tab { background:#111827; border-bottom:1px solid #1e2533; padding:4px 10px; font-size:.62rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.07em; }
+.http-panel-tab { background:#111827; border-bottom:1px solid #1e2533; padding:4px 10px; font-size:.62rem; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.07em; display:flex; align-items:center; justify-content:space-between; }
+.http-copy-btn { background:none; border:1px solid #1e2533; border-radius:3px; color:#484f58; font-size:.58rem; font-weight:600; padding:1px 7px; cursor:pointer; font-family:var(--mono); letter-spacing:.03em; transition:color .15s,border-color .15s; line-height:1.6; }
+.http-copy-btn:hover { color:#c9d1d9; border-color:#484f58; }
+.http-copy-btn.copied { color:#3fb950; border-color:#3fb950; }
 .http-pre { margin:0; padding:10px 12px; font-family:var(--mono); font-size:.67rem; color:#c9d1d9; overflow-x:auto; max-height:240px; overflow-y:auto; white-space:pre; word-break:normal; line-height:1.55; scrollbar-width:thin; scrollbar-color:#1e2533 transparent; }
 .http-pre::-webkit-scrollbar { width:5px; height:5px; }
 .http-pre::-webkit-scrollbar-thumb { background:#1e2533; border-radius:3px; }

@@ -2305,6 +2305,27 @@ function toggleFindGroupHosts(elId) {
 }
 
 // ── HTTP Evidence panel — Burp Suite style ─────────────────────────────────
+const _httpCopyTexts = {};
+
+function _copyHttpPanel(id) {
+  const text = _httpCopyTexts[id] || "";
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById("hcopy-" + id);
+    if (!btn) return;
+    btn.textContent = "✓ Copied";
+    btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = "Copy"; btn.classList.remove("copied"); }, 1800);
+  }).catch(() => {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;opacity:0;top:0;left:0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  });
+}
+
 function _httpHighlight(rawText, matched) {
   if (!rawText) return "";
   // 1. Escape HTML entities first
@@ -2342,16 +2363,27 @@ function _renderHttpEvidence(findings) {
     const respHtml = _httpHighlight(f.response_raw || "", f.matched || "");
     const hostTag  = instances.length > 1
       ? `<code style="font-size:.62rem;background:rgba(255,255,255,.07);padding:1px 6px;border-radius:4px;margin-left:6px;color:var(--text2)">${esc(f.host||"")}</code>` : "";
+    const uid = Date.now().toString(36) + i;
+    const reqId  = "req-"  + uid;
+    const respId = "resp-" + uid;
+    _httpCopyTexts[reqId]  = f.request_raw  || "";
+    _httpCopyTexts[respId] = f.response_raw || "";
     return `
       <div style="margin-bottom:${i < instances.length-1 ? '10' : '0'}px">
         ${hostTag ? `<div style="font-size:.62rem;color:var(--text3);margin-bottom:4px">Instance ${i+1}${hostTag}</div>` : ""}
         <div class="http-panels">
           <div class="http-panel">
-            <div class="http-panel-tab">Request</div>
+            <div class="http-panel-tab">
+              <span>Request</span>
+              <button id="hcopy-${reqId}" class="http-copy-btn" onclick="_copyHttpPanel('${reqId}')">Copy</button>
+            </div>
             <pre class="http-pre">${reqHtml || '<span style="color:#484f58">—</span>'}</pre>
           </div>
           <div class="http-panel">
-            <div class="http-panel-tab">Response</div>
+            <div class="http-panel-tab">
+              <span>Response</span>
+              <button id="hcopy-${respId}" class="http-copy-btn" onclick="_copyHttpPanel('${respId}')">Copy</button>
+            </div>
             <pre class="http-pre">${respHtml || '<span style="color:#484f58">—</span>'}</pre>
           </div>
         </div>
