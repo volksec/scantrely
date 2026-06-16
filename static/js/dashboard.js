@@ -9096,6 +9096,46 @@ async function stopPipeline(cid, {notify = true} = {}) {
   }
 }
 
+async function scanAllCompanies() {
+  const companies = allCompanies();
+  if (!companies.length) { alert('Nenhuma empresa cadastrada.'); return; }
+  const active = companies.filter(c => {
+    const s = (pipelineState[c.id] || {}).status;
+    return s === 'running' || s === 'queued';
+  });
+  const toStart = companies.length - active.length;
+  if (toStart === 0) { alert('Todos os scans já estão em execução.'); return; }
+  if (!confirm(`Iniciar scan em ${toStart} empresa(s)${active.length ? ` (${active.length} já em execução serão ignoradas)` : ''}?`)) return;
+  const btn = document.getElementById('btn-scan-all');
+  if (btn) { btn.disabled = true; btn.textContent = 'Iniciando...'; }
+  let cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem('asm_settings') || '{}'); } catch(e) {}
+  cfg.mode = selectedRateMode || cfg.mode || 'balanced';
+  try {
+    const r = await fetch('/api/recon/scan-all', {
+      method: 'POST',
+      headers: Object.assign({'Content-Type': 'application/json'}, _authHeaders()),
+      body: JSON.stringify(cfg),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    (d.cids || []).forEach(cid => {
+      pipelineState[cid] = Object.assign({}, pipelineState[cid] || {}, {
+        status: 'queued',
+        started_at: new Date().toISOString(),
+      });
+      _syncPipelineActionButton(cid);
+      _startPipelinePoll(cid);
+    });
+    loadJobs();
+    alert(`${d.started || 0} scan(s) iniciado(s)${d.skipped ? `, ${d.skipped} ignorado(s)` : ''}.`);
+  } catch(e) {
+    alert('Erro ao iniciar scans: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Escanear Todos'; }
+  }
+}
+
 async function cancelAllScans() {
   const btn = document.getElementById('btn-cancel-all-scans');
   if (!confirm('Cancelar todos os scans em execução?')) return;
