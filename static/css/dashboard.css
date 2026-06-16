@@ -2190,6 +2190,7 @@ html { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .findings-mini.c .findings-mini-num { color:var(--red); }
 .findings-mini.h .findings-mini-num { color:var(--orange); }
 .findings-mini.m .findings-mini-num { color:var(--yellow); }
+.findings-mini.l .findings-mini-num { color:var(--green); }
 .findings-mini.i .findings-mini-num { color:var(--blue); }
 
 .fc {

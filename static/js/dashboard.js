@@ -383,8 +383,8 @@ function _hydratePlaywrightInventoryBatch(jobs) {
 }
 
 function _severityCard(severity, count, cid) {
-  const classes = { critical: "c", high: "h", medium: "m", info: "i" };
-  const labels = { critical: "Critical", high: "High", medium: "Medium", info: "Info" };
+  const classes = { critical: "c", high: "h", medium: "m", low: "l", info: "i" };
+  const labels = { critical: "Critical", high: "High", medium: "Medium", low: "Low", info: "Info" };
   const click = cid ? ` onclick="goToVulnSeverity(${_jsArg(cid)},'${severity}',event)" style="cursor:pointer" title="Ver vulnerabilidades ${labels[severity] || severity}"` : "";
   return `
     <div class="findings-mini ${classes[severity] || ""}"${click}>
@@ -1036,17 +1036,23 @@ async function switchTab(name, btn) {
 
 // Jump straight from any critical/high/medium/info severity indicator to the
 // filtered Vulnerabilities tab for the given company.
+let _pendingVulnFilter = null; // {cid, sev} applied by renderVulnsTab after fetch completes
+
 async function goToVulnSeverity(cid, severity, ev) {
   if (ev) ev.stopPropagation();
+  const mappedSev = (severity === "info") ? "" : severity;
+  _pendingVulnFilter = { cid, sev: mappedSev };
   if (state.currentId !== cid || state.page !== "company") {
     await selectCompany(cid);
   }
   const groupBtn = document.querySelector('.tab-btn[data-group="vulns"]');
   await switchGroup("vulns", groupBtn);
+  // Fast path: if page already rendered, f-sev exists now
   setTimeout(() => {
     const sevSel = document.getElementById("f-sev");
-    if (sevSel) {
-      sevSel.value = (severity === "info") ? "" : severity;
+    if (sevSel && _pendingVulnFilter && _pendingVulnFilter.cid === cid) {
+      sevSel.value = mappedSev;
+      _pendingVulnFilter = null;
       applyFindFilter(cid);
     }
     const list = document.getElementById("f-list") || document.getElementById("tab-vulns");
@@ -9670,8 +9676,9 @@ async function renderVulnsTab(co) {
   const cats = [...new Set(findings.map(f => f.category).filter(Boolean))].sort();
   const summaryCards = {
     critical: findings.filter(f => f.severity === "critical").length,
-    high: findings.filter(f => f.severity === "high").length,
-    medium: findings.filter(f => f.severity === "medium").length,
+    high:     findings.filter(f => f.severity === "high").length,
+    medium:   findings.filter(f => f.severity === "medium").length,
+    low:      findings.filter(f => f.severity === "low").length,
   };
 
   const cidJs = _jsArg(co.id);
@@ -9689,6 +9696,7 @@ async function renderVulnsTab(co) {
     ${_vStatCard("Critical", summaryCards.critical, "var(--red)")}
     ${_vStatCard("High", summaryCards.high, "var(--orange)")}
     ${_vStatCard("Medium", summaryCards.medium, "var(--yellow)")}
+    ${_vStatCard("Low", summaryCards.low, "var(--blue)")}
     ${_vStatCard("CORS", cors.length, "var(--red)")}
     ${_vStatCard("GraphQL", graphql.length, "var(--teal)")}
     ${_vStatCard("Nuclei", nuclei.length, "var(--orange)")}
@@ -9700,11 +9708,12 @@ async function renderVulnsTab(co) {
       ${_severityCard("critical", summaryCards.critical, co.id)}
       ${_severityCard("high", summaryCards.high, co.id)}
       ${_severityCard("medium", summaryCards.medium, co.id)}
+      ${_severityCard("low", summaryCards.low, co.id)}
     </div>`;
     html += `<div class="filter-bar">
       <input type="text" class="fi grow" id="f-search" placeholder="Search confirmed vulns, hosts, descriptions..." oninput='applyFindFilter(${cidJs})'>
       <select class="fi" id="f-sev" onchange='applyFindFilter(${cidJs})'>
-        <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option>
+        <option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
       </select>
       <select class="fi" id="f-cat" onchange='applyFindFilter(${cidJs})'><option value="">All categories</option>${cats.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join("")}</select>
       <select class="fi" id="f-triage" onchange='applyFindFilter(${cidJs})'>
@@ -9782,6 +9791,12 @@ async function renderVulnsTab(co) {
 
   html += `</div></div>`;
   el.innerHTML = html;
+  // Apply any pending severity filter (set by goToVulnSeverity before fetch resolved)
+  if (_pendingVulnFilter && _pendingVulnFilter.cid === co.id) {
+    const sevSel = document.getElementById("f-sev");
+    if (sevSel) sevSel.value = _pendingVulnFilter.sev;
+    _pendingVulnFilter = null;
+  }
   if (findings.length) applyFindFilter(co.id);
 }
 
