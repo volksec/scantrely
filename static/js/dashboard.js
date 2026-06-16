@@ -5107,10 +5107,12 @@ async function saveEditCompany() {
     });
     if(!r.ok){ const d=await r.json(); throw new Error(d.error||"Server error"); }
     document.getElementById("modal-edit-co").classList.remove("show");
-    await reloadServerData();
     const co = allCompanies().find(c=>c.id===_editCoId);
-    if(co) renderCompanyView(co);
+    if(co) { co.name = name; co.domains = domains; }
+    const updated = allCompanies().find(c=>c.id===_editCoId);
+    if(updated) renderCompanyView(updated);
     renderSidebar();
+    reloadServerData().catch(() => {});
   } catch(e) {
     errEl.textContent = e.message;
     errEl.style.display = "block";
